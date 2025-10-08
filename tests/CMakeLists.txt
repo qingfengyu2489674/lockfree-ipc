@@ -9,6 +9,8 @@ add_executable(run_tests
 target_link_libraries(run_tests PRIVATE
     mylib       # 这是 src/CMakeLists.txt 里生成的库
     gtest_main  # 来自 third_party/googletest
+    pthread
+    rt
 )
 
 # 3. 确保包含目录可见
