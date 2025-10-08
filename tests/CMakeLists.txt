@@ -2,7 +2,7 @@
 
 # 1. 创建一个测试可执行文件
 add_executable(run_tests
-    test_calculator.cpp
+    test_sanity.cpp
 )
 
 # 2. 链接库：业务库 + GoogleTest
