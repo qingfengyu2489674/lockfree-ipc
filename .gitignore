@@ -1,0 +1,86 @@
+# ===================================================================
+#  Gitignore for a C++ CMake Project Template
+# ===================================================================
+
+# 1. Build artifacts
+# -------------------------------------------------------------------
+# Ignore the entire build directory. This is the most important rule.
+# It covers all compiled object files, libraries, executables, 
+# Makefiles, and downloaded dependencies (like GoogleTest).
+/build/
+
+# Ignore other common build directory names, just in case.
+/Build/
+/build-*/
+/out/
+
+# 2. CMake specific files
+# -------------------------------------------------------------------
+# These files might occasionally appear in the source directory.
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+
+# 3. Common compiled outputs
+# -------------------------------------------------------------------
+# Ignore object files, libraries, and executables if they somehow
+# appear outside the build directory.
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# 4. IDE and Editor specific files
+# -------------------------------------------------------------------
+# Visual Studio Code
+.vscode/
+
+# CLion
+.idea/
+
+# Visual Studio
+*.sln
+*.suo
+*.user
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+/ipch/
+/x64/
+/Win32/
+/ARM64/
+/Debug/
+/Release/
+/.vs/
+
+# Qt Creator
+*.pro.user
+*.pro.user.*
+
+# 5. OS generated files
+# -------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# 6. Other common files
+# -------------------------------------------------------------------
+# Log files
+*.log
+
+# Crash dumps
+*.dmp
+core.*
