@@ -25,12 +25,13 @@ public:
 
 private:
     // 私有实现：用 CAS 把新节点安装为 top（线性化点）
-    void installTopCAS_(LockFreeNode<T>* n) noexcept;
+    void pushImpl_(LockFreeNode<T>* n) noexcept;
 
 private:
     alignas(64) LockFreeNode<T>*   top_{nullptr};
     // 指针持有，名称按你要求：retiredList_
     LockFreeRetiredList<T>*        retiredList_{nullptr};
+
 };
 
 
@@ -59,13 +60,13 @@ LockFreeStack<T>::~LockFreeStack() {
 template <typename T>
 void LockFreeStack<T>::push(const T& v) {
     auto* n = new LockFreeNode<T>(v);
-    installTopCAS_(n);
+    pushImpl_(n);
 }
 
 template <typename T>
 void LockFreeStack<T>::push(T&& v) {
     auto* n = new LockFreeNode<T>(std::move(v));
-    installTopCAS_(n);
+    pushImpl_(n);
 }
 
 template <typename T>
@@ -89,7 +90,7 @@ bool LockFreeStack<T>::empty() const noexcept {
 }
 
 template <typename T>
-void LockFreeStack<T>::installTopCAS_(LockFreeNode<T>* n) noexcept {
+void LockFreeStack<T>::pushImpl_(LockFreeNode<T>* n) noexcept {
     LockFreeNode<T>* old = load_acquire_ptr(&top_);
     do { n->next = old; }
     while (!cas_acq_rel_ptr(&top_, old, n)); // 成功即线性化点
