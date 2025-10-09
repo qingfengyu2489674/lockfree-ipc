@@ -3,6 +3,7 @@
 # 1. 创建一个测试可执行文件
 add_executable(run_tests
     test_sanity.cpp
+    LockFreeStack_Shmem_SingleThread.cpp
 )
 
 # 2. 链接库：业务库 + GoogleTest
