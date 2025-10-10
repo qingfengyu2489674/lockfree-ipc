@@ -6,11 +6,11 @@
 #include <assert.h>
 
 #include "gc_malloc/CentralHeap/ChunkAllocatorFromKernel.hpp"
-#include "gc_malloc/CentralHeap/Shm2MBChunkAllocator.hpp"
+#include "gc_malloc/CentralHeap/ShmChunkAllocator.hpp"
 
 
 
-Shm2MBChunkAllocator::Shm2MBChunkAllocator(void* shm_base, size_t region_bytes)
+ShmChunkAllocator::ShmChunkAllocator(void* shm_base, size_t region_bytes)
     : shm_base_(static_cast<unsigned char*>(shm_base)),
       region_bytes_(region_bytes)
 {
@@ -25,7 +25,7 @@ Shm2MBChunkAllocator::Shm2MBChunkAllocator(void* shm_base, size_t region_bytes)
               "atomic<uint64_t> must be lock-free on this platform");
 }
 
-void* Shm2MBChunkAllocator::allocate(size_t size) {
+void* ShmChunkAllocator::allocate(size_t size) {
     if(size == 0 || total_chunks_ == 0){
         return nullptr;
     }
@@ -49,25 +49,25 @@ void* Shm2MBChunkAllocator::allocate(size_t size) {
     }
 }
 
-void Shm2MBChunkAllocator::deallocate(void* ptr, size_t size) {
+void ShmChunkAllocator::deallocate(void* ptr, size_t size) {
     // bump-only：不做局部回收
     // 复用策略放在上层 CentralHeap 的自由链表中
 }
 
 // 便捷查询
-void* Shm2MBChunkAllocator::getShmBase() const noexcept {
+void* ShmChunkAllocator::getShmBase() const noexcept {
     return static_cast<void*>(shm_base_);
 }
 
-std::size_t Shm2MBChunkAllocator::getRegionBytes() const noexcept {
+std::size_t ShmChunkAllocator::getRegionBytes() const noexcept {
     return region_bytes_;
 }
 
-std::size_t Shm2MBChunkAllocator::getTotalChunks() const noexcept {
+std::size_t ShmChunkAllocator::getTotalChunks() const noexcept {
     return total_chunks_;
 }
 
-std::size_t Shm2MBChunkAllocator::getUsedChunks() const noexcept {
+std::size_t ShmChunkAllocator::getUsedChunks() const noexcept {
     return static_cast<std::size_t>(
         next_chunk_idx_.load(std::memory_order_acquire));
 }

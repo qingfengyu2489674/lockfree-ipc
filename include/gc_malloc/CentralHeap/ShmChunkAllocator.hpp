@@ -6,15 +6,15 @@
 
 #include "ChunkAllocatorFromKernel.hpp"
 
-class Shm2MBChunkAllocator : public ChunkAllocatorFromKernel {
+class ShmChunkAllocator : public ChunkAllocatorFromKernel {
 public:
     void* allocate(size_t size) override;
     void deallocate(void* ptr, size_t size) override;
 
-    explicit Shm2MBChunkAllocator(void* shm_base,
+    explicit ShmChunkAllocator(void* shm_base,
                                 size_t region_bytes);
 
-    ~Shm2MBChunkAllocator() override = default;
+    ~ShmChunkAllocator() override = default;
 
     // 便捷查询（仅声明）
     void*        getShmBase() const noexcept;
@@ -23,10 +23,10 @@ public:
     size_t  getUsedChunks() const noexcept;
 
 
-    Shm2MBChunkAllocator(const Shm2MBChunkAllocator&) = delete;
-    Shm2MBChunkAllocator& operator=(const Shm2MBChunkAllocator&) = delete;
-    Shm2MBChunkAllocator(Shm2MBChunkAllocator&&) = delete;
-    Shm2MBChunkAllocator& operator=(Shm2MBChunkAllocator&&) = delete;
+    ShmChunkAllocator(const ShmChunkAllocator&) = delete;
+    ShmChunkAllocator& operator=(const ShmChunkAllocator&) = delete;
+    ShmChunkAllocator(ShmChunkAllocator&&) = delete;
+    ShmChunkAllocator& operator=(ShmChunkAllocator&&) = delete;
 private:
     static constexpr size_t kAlignmentSize = 2 * 1024 * 1024; // 2MB
 

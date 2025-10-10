@@ -1,13 +1,16 @@
 #pragma once
 
 #include <cstddef>
+#include "ShmFreeChunkList.hpp"
+#include "ShmChunkAllocator.hpp"
+#include "ShareMemory/ShmHeader.hpp"
 
-class ChunkAllocatorFromKernel;
-class FreeChunkCache;
+class ShmChunkAllocator;
+class ShmFreeChunkList;
 
 class CentralHeap {
 public:
-    static CentralHeap& GetInstance();
+    static CentralHeap& GetInstance(void* shm_base, size_t total_bytes);
 
     void* acquireChunk(size_t size);
     void releaseChunk(void* chunk, size_t size);
@@ -21,15 +24,17 @@ public:
     static constexpr size_t kChunkSize = 2 * 1024 *1024;
 
 private:
-    CentralHeap();
-    virtual ~CentralHeap(); 
+    CentralHeap(void* shm_base, size_t region_bytes);
+    ~CentralHeap() = delete; 
 
     bool refillCache(); 
+    void setSelfOffset(size_t off);
 
-    ChunkAllocatorFromKernel* ChunkAllocatorFromKernel_ptr = nullptr;
-    FreeChunkCache* FreeChunkCache_ptr = nullptr;
+    ShmChunkAllocator shm_alloc_;
+    ShmFreeChunkList shm_free_list_;
 
-    static constexpr size_t kMaxWatermarkInChunks = 16;
+    size_t self_off_{0}; // 记录自身在共享内存上的偏移
+
     static constexpr size_t kTargetWatermarkInChunks = 8;
 };
 

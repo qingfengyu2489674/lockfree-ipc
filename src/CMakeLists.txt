@@ -5,7 +5,7 @@ add_library(mylib STATIC
     ShareMemory/ShareMemoryRegion.cpp
 
     gc_malloc/CentralHeap/AlignedChunkAllocatorByMmap.cpp
-    gc_malloc/CentralHeap/Shm2MBChunkAllocator.cpp
+    gc_malloc/CentralHeap/ShmChunkAllocator.cpp
     gc_malloc/CentralHeap/FreeChunkListCache.cpp
     gc_malloc/CentralHeap/CentralHeap.cpp
     gc_malloc/ThreadHeap/Bitmap.cpp

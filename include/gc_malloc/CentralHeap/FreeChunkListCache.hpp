@@ -2,13 +2,13 @@
 
 #include <list>
 #include <mutex>
-#include "FreeChunkCache.hpp"
+#include "FreeChunkManager.hpp"
 
 struct FreeNode {
     FreeNode* next;
 };
 
-class FreeChunkListCache : public FreeChunkCache
+class FreeChunkListCache : public FreeChunkManager
 {
 public:
     void* acquire() override;
