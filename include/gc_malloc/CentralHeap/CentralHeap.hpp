@@ -28,12 +28,11 @@ private:
     ~CentralHeap() = delete; 
 
     bool refillCache(); 
-    void setSelfOffset(size_t off);
 
     ShmChunkAllocator shm_alloc_;
     ShmFreeChunkList shm_free_list_;
 
-    size_t self_off_{0}; // 记录自身在共享内存上的偏移
+    size_t self_off_{0};
 
     static constexpr size_t kTargetWatermarkInChunks = 8;
 };

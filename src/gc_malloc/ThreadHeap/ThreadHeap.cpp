@@ -8,6 +8,26 @@
 #include "gc_malloc/ThreadHeap/MemSubPool.hpp"
 #include "gc_malloc/ThreadHeap/ThreadHeap.hpp"
 
+namespace {
+    std::atomic<CentralHeap*> g_central{nullptr};   // 进程内发布用
+    thread_local CentralHeap* t_central = nullptr;  // 每线程缓存
+}
+
+void SetupCentral(void* shm_base, size_t bytes) {
+    // 进程 mmap 完成后、启动工作线程前调用一次
+    CentralHeap& ch = CentralHeap::GetInstance(shm_base, bytes);
+    g_central.store(&ch, std::memory_order_release);
+}
+
+static inline CentralHeap* getCentral() {
+    if (t_central) return t_central;
+    CentralHeap* p = g_central.load(std::memory_order_acquire);
+    // 若你保证所有线程在 SetupCentral 之后才启动，也可省这段检查
+    assert(p && "Call SetupCentral(...) before using ThreadHeap");
+    t_central = p;
+    return p;
+}
+
 // -------------------- 对外公共接口 --------------------
 
 void* ThreadHeap::allocate(std::size_t nbytes) noexcept {
@@ -15,7 +35,7 @@ void* ThreadHeap::allocate(std::size_t nbytes) noexcept {
 
     // 大对象：直接走 CentralHeap（整块 chunk）
     if (nbytes > SizeClassConfig::kMaxSmallAlloc) {
-        return CentralHeap::GetInstance().acquireChunk(SizeClassConfig::kChunkSizeBytes);
+        return getCentral()->acquireChunk(SizeClassConfig::kChunkSizeBytes);
     }
 
     // 小对象：映射到 size-class
@@ -73,7 +93,7 @@ MemSubPool* ThreadHeap::refillFromCentral_cb(void* ctx) noexcept {
     SizeClassPoolManager& mgr = at(*storage_ptr);
     const std::size_t block_size = mgr.getBlockSize();
 
-    void* raw = CentralHeap::GetInstance().acquireChunk(SizeClassConfig::kChunkSizeBytes);
+    void* raw = getCentral()->acquireChunk(SizeClassConfig::kChunkSizeBytes);
     if (!raw) return nullptr;
 
     return new (raw) MemSubPool(block_size);
@@ -82,7 +102,7 @@ MemSubPool* ThreadHeap::refillFromCentral_cb(void* ctx) noexcept {
 void ThreadHeap::returnToCentral_cb(void* /*ctx*/, MemSubPool* p) noexcept {
     if (!p) return;
     p->~MemSubPool();
-    CentralHeap::GetInstance().releaseChunk(static_cast<void*>(p), SizeClassConfig::kChunkSizeBytes);
+    getCentral()->releaseChunk(static_cast<void*>(p), SizeClassConfig::kChunkSizeBytes);
 }
 
 // -------------------- 小工具 --------------------

@@ -6,6 +6,8 @@ add_library(mylib STATIC
 
     gc_malloc/CentralHeap/AlignedChunkAllocatorByMmap.cpp
     gc_malloc/CentralHeap/ShmChunkAllocator.cpp
+    gc_malloc/CentralHeap/ShmMutexLock.cpp
+    gc_malloc/CentralHeap/ShmFreeChunkList.cpp
     gc_malloc/CentralHeap/FreeChunkListCache.cpp
     gc_malloc/CentralHeap/CentralHeap.cpp
     gc_malloc/ThreadHeap/Bitmap.cpp

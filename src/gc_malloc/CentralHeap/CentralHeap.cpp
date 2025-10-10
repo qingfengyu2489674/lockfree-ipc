@@ -8,42 +8,62 @@
 #include <cassert>
 #include <iostream>
 
-// -----------------------------------------------------------------------------
-// 1. 在编译时，在 .bss 段为我们的核心组件预留静态内存。
-//    这些全局静态变量保证了它们的生命周期与程序相同，并且不依赖于堆分配。
-// -----------------------------------------------------------------------------
-
-static std::aligned_storage<sizeof(ShmChunkAllocator),
-                            alignof(ShmChunkAllocator)>::type g_kernel_allocator_buffer;
-
-static std::aligned_storage<sizeof(ShmFreeChunkList),
-                            alignof(ShmFreeChunkList)>::type g_chunk_cache_buffer;
-
+static inline std::size_t align_up(std::size_t x, std::size_t a) {
+    return (x + (a - 1)) & ~(a - 1);
+}
 
 // -----------------------------------------------------------------------------
-// 2. CentralHeap 的构造/析构函数和单例实现
+// 1. CentralHeap 的构造/析构函数和单例实现
 // -----------------------------------------------------------------------------
 
-CentralHeap& CentralHeap::GetInstance() {
-    // Meyers' Singleton: C++11 保证了函数内静态变量的线程安全初始化。
-    // instance 本身也会被存放在 BSS/DATA 段。
-    static CentralHeap instance;
-    return instance;
+CentralHeap& CentralHeap::GetInstance(void* shm_base, std::size_t total_bytes) {
+    auto* base = reinterpret_cast<unsigned char*>(shm_base);
+    auto* shm_header  = reinterpret_cast<ShmHeader*>(base);
+
+    if (shm_header->state.load(std::memory_order_acquire) == ShmState::kUninit) {
+        // 布局：| ShmHeader | CentralHeap | 数据区 ... |
+        const std::size_t off_heap = align_up(sizeof(ShmHeader), alignof(CentralHeap));
+        const std::size_t off_data = align_up(off_heap + sizeof(CentralHeap), 64);
+        assert(total_bytes > off_data && "shared region too small");
+
+        shm_header->heap_off     = static_cast<std::uint64_t>(off_heap);
+        shm_header->data_off     = static_cast<std::uint64_t>(off_data);
+        shm_header->region_bytes = total_bytes - off_data;
+
+        void* heap_addr = base + shm_header->heap_off;
+        void* data_base = base + shm_header->data_off;
+
+        // 在共享内存中原地构造 CentralHeap 本体
+        new (heap_addr) CentralHeap(
+            data_base,
+            shm_header->region_bytes
+        );
+
+        // 记录自身在共享内存中的偏移（直接写成员即可，处于类作用域）
+        reinterpret_cast<CentralHeap*>(heap_addr)->self_off_ = off_heap;
+
+        shm_header->state.store(ShmState::kReady, std::memory_order_release);
+    }
+
+    // 直接从偏移还原出 CentralHeap*
+    auto* heap = reinterpret_cast<CentralHeap*>(base + shm_header->heap_off);
+    return *heap;
+}
+
+CentralHeap::CentralHeap(void* shm_base, std::size_t region_bytes)
+    : shm_alloc_(shm_base, region_bytes),
+      shm_free_list_() {
 }
 
 
-CentralHeap::CentralHeap(void* shm_base, size_t region_bytes)
-      : shm_alloc_(shm_base, region_bytes), shm_free_list_{} {}
-
-
 // -----------------------------------------------------------------------------
-// 3. CentralHeap 的核心逻辑实现
+// 2. CentralHeap 的核心逻辑实现
 // -----------------------------------------------------------------------------
 
 void* CentralHeap::acquireChunk(size_t size) {
     assert(size == kChunkSize);
 
-    void* chunk = FreeChunkManager_ptr->acquire();
+    void* chunk = shm_free_list_.acquire();
     if(chunk != nullptr) { 
         return chunk;
     }
@@ -54,7 +74,7 @@ void* CentralHeap::acquireChunk(size_t size) {
             << "System might be out of memory." << std::endl;
     }
 
-    chunk = FreeChunkManager_ptr->acquire();
+    chunk = shm_free_list_.acquire();
     if(chunk != nullptr) { 
         return chunk;
     }
@@ -63,15 +83,15 @@ void* CentralHeap::acquireChunk(size_t size) {
 }
 
 bool CentralHeap::refillCache() {
-    if (FreeChunkManager_ptr->getCacheCount() > 0) {
+    if (shm_free_list_.getCacheCount() > 0) {
         return true;
     }
 
-    while(FreeChunkManager_ptr->getCacheCount() <= CentralHeap::kTargetWatermarkInChunks) {
-        void* chunk = ChunkAllocatorFromKernel_ptr->allocate(kChunkSize);
+    while(shm_free_list_.getCacheCount() <= kTargetWatermarkInChunks) {
+        void* chunk = shm_alloc_.allocate(kChunkSize);
         if(!chunk)
             return false;
-        FreeChunkManager_ptr->deposit(chunk);
+        shm_free_list_.deposit(chunk);
     }
 
     return true;
@@ -86,6 +106,6 @@ void CentralHeap::releaseChunk(void* chunk, size_t size) {
     //     ChunkAllocatorFromKernel_ptr->deallocate(chunk, kChunkSize);
     // }
 
-    FreeChunkManager_ptr->deposit(chunk);
+    shm_free_list_.deposit(chunk);
 }
 
