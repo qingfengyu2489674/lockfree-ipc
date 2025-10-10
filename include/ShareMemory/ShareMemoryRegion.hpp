@@ -2,10 +2,10 @@
 #include <string>
 #include <cstddef>
 
-class SharedMemoryManager {
+class SharedMemoryRegion {
 public:
-    SharedMemoryManager(const std::string& name, size_t getMemorySize, bool create = true);
-    virtual ~SharedMemoryManager();
+    SharedMemoryRegion(const std::string& name, size_t getMemorySize, bool create = true);
+    virtual ~SharedMemoryRegion();
 
     void* getMappedAddress() const noexcept;
     size_t getMemorySize() const noexcept;

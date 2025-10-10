@@ -1,11 +1,11 @@
-#include "SharedMemoryManager.hpp"
+#include "ShareMemory/ShareMemoryRegion.hpp"
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdexcept>
 
-SharedMemoryManager::SharedMemoryManager(const std::string& name, size_t size, bool create)
+SharedMemoryRegion::SharedMemoryRegion(const std::string& name, size_t size, bool create)
     : name_(name), size_(size) {
     int flags = create ? (O_CREAT | O_RDWR) : O_RDWR;
     fd_ = shm_open(name_.c_str(), flags, 0666);
@@ -20,16 +20,16 @@ SharedMemoryManager::SharedMemoryManager(const std::string& name, size_t size, b
         throw std::runtime_error("mmap failed");
 }
 
-SharedMemoryManager::~SharedMemoryManager() {
+SharedMemoryRegion::~SharedMemoryRegion() {
     if (addr_ && addr_ != MAP_FAILED)
         munmap(addr_, size_);
     if (fd_ >= 0)
         close(fd_);
 }
 
-void* SharedMemoryManager::getMappedAddress() const noexcept { return addr_; }
-size_t SharedMemoryManager::getMemorySize() const noexcept { return size_; }
+void* SharedMemoryRegion::getMappedAddress() const noexcept { return addr_; }
+size_t SharedMemoryRegion::getMemorySize() const noexcept { return size_; }
 
-void SharedMemoryManager::unlinkSegment(const std::string& name) noexcept {
+void SharedMemoryRegion::unlinkSegment(const std::string& name) noexcept {
     shm_unlink(name.c_str());
 }

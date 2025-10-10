@@ -1,7 +1,7 @@
 // tests/LockFreeStack_Shmem_SingleThread.cpp
 #include <gtest/gtest.h>
 #include <new>                    // placement new
-#include "lockfree/LockFreeStack.hpp"
+#include "lockfreeStack/LockFreeStack.hpp"
 #include "SharedMemoryTestFixture.hpp"   // 你已有的夹具，提供 base 指针等
 
 // 夹具里假设有：void* base; 以及在 SetUp() 里完成映射
