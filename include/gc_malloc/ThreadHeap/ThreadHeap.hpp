@@ -11,6 +11,7 @@
 #include "gc_malloc/ThreadHeap/SizeClassConfig.hpp"
 
 class MemSubPool;
+class CentralHeap;
 
 /**
  * ThreadHeap
@@ -63,4 +64,6 @@ private:
     }
 
     ManagedList managed_list_;
+
+    CentralHeap& CentralHeap_ref_;
 };

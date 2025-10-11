@@ -10,16 +10,14 @@
 
 #include "SharedMemoryTestFixture.hpp"
 #include "gc_malloc/ThreadHeap/ThreadHeap.hpp"
-#include "gc_malloc/ThreadHeap/CentralHeapBootstrap.hpp"
+#include "gc_malloc/ThreadHeap/ProcessAllocatorContext.hpp"
 #include "gc_malloc/CentralHeap/CentralHeap.hpp"
 
 class SmallBlocksMTFixture : public SharedMemoryTestFixture {
 protected:
     void SetUp() override {
         SharedMemoryTestFixture::SetUp();
-        // 用夹具的统一容量
-        SetupCentral(base, SharedMemoryTestFixture::kRegionBytes);
-        (void)CentralHeap::GetInstance(base, SharedMemoryTestFixture::kRegionBytes);
+        ProcessAllocatorContext::Setup(base, kRegionBytes);
     }
 };
 

@@ -11,7 +11,7 @@
 
 #include "SharedMemoryTestFixture.hpp"
 #include "gc_malloc/CentralHeap/CentralHeap.hpp"
-#include "gc_malloc/ThreadHeap/CentralHeapBootstrap.hpp"
+#include "gc_malloc/ThreadHeap/ProcessAllocatorContext.hpp"
 #include "ShareMemory/ShareMemoryRegion.hpp"
 
 namespace {
@@ -33,9 +33,7 @@ class CentralHeapMPFixture : public SharedMemoryTestFixture {
 protected:
     void SetUp() override {
         SharedMemoryTestFixture::SetUp();
-        // 父进程一次性初始化（子进程只需附着）
-        SetupCentral(base, kRegionBytes);
-        // (void)CentralHeap::GetInstance(base, kRegionBytes);
+        ProcessAllocatorContext::Setup(base, kRegionBytes);
     }
 };
 

@@ -11,7 +11,7 @@
 #include "SharedMemoryTestFixture.hpp"
 #include "gc_malloc/CentralHeap/CentralHeap.hpp"
 #include "gc_malloc/ThreadHeap/ThreadHeap.hpp"
-#include "gc_malloc/ThreadHeap/CentralHeapBootstrap.hpp"
+#include "gc_malloc/ThreadHeap/ProcessAllocatorContext.hpp"
 
 // 如果 SetupCentral 没有在可见头文件中声明，请解开下面这行：
 // extern void SetupCentral(void* shm_base, size_t bytes);
@@ -35,9 +35,7 @@ class CentralHeapFixture : public SharedMemoryTestFixture {
 protected:
     void SetUp() override {
         SharedMemoryTestFixture::SetUp();
-        // 在任何线程使用前，初始化中心堆（单例）
-        SetupCentral(base, kRegionBytes);
-        (void)CentralHeap::GetInstance(base, kRegionBytes);
+        ProcessAllocatorContext::Setup(base, kRegionBytes);
     }
 };
 

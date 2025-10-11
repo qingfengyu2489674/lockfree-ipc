@@ -7,7 +7,7 @@
 #include "gc_malloc/CentralHeap/CentralHeap.hpp"
 #include "gc_malloc/ThreadHeap/MemSubPool.hpp"
 #include "gc_malloc/ThreadHeap/ThreadHeap.hpp"
-#include "gc_malloc/ThreadHeap/CentralHeapBootstrap.hpp"
+#include "gc_malloc/ThreadHeap/ProcessAllocatorContext.hpp"
 
 
 // -------------------- 对外公共接口 --------------------
@@ -17,7 +17,7 @@ void* ThreadHeap::allocate(std::size_t nbytes) noexcept {
 
     // 大对象：直接走 CentralHeap（整块 chunk）
     if (nbytes > SizeClassConfig::kMaxSmallAlloc) {
-        return getCentral()->acquireChunk(SizeClassConfig::kChunkSizeBytes);
+        return th.CentralHeap_ref_.acquireChunk(SizeClassConfig::kChunkSizeBytes);
     }
 
     // 小对象：映射到 size-class
@@ -46,7 +46,9 @@ ThreadHeap& ThreadHeap::local() noexcept {
     return tls_instance;
 }
 
-ThreadHeap::ThreadHeap() noexcept {
+ThreadHeap::ThreadHeap() noexcept 
+    : CentralHeap_ref_(*ProcessAllocatorContext::getCentralHeap())
+{
     for (std::size_t i = 0; i < k_class_count; ++i) {
         const std::size_t bs = SizeClassConfig::ClassToSize(i);
         void* slot = static_cast<void*>(&managers_storage_[i]);
@@ -75,7 +77,8 @@ MemSubPool* ThreadHeap::refillFromCentral_cb(void* ctx) noexcept {
     SizeClassPoolManager& mgr = at(*storage_ptr);
     const std::size_t block_size = mgr.getBlockSize();
 
-    void* raw = getCentral()->acquireChunk(SizeClassConfig::kChunkSizeBytes);
+    ThreadHeap& th = local();
+    void* raw = th.CentralHeap_ref_.acquireChunk(SizeClassConfig::kChunkSizeBytes);
     if (!raw) return nullptr;
 
     return new (raw) MemSubPool(block_size);
@@ -84,7 +87,8 @@ MemSubPool* ThreadHeap::refillFromCentral_cb(void* ctx) noexcept {
 void ThreadHeap::returnToCentral_cb(void* /*ctx*/, MemSubPool* p) noexcept {
     if (!p) return;
     p->~MemSubPool();
-    getCentral()->releaseChunk(static_cast<void*>(p), SizeClassConfig::kChunkSizeBytes);
+    ThreadHeap& th = local();
+    th.CentralHeap_ref_.releaseChunk(static_cast<void*>(p), SizeClassConfig::kChunkSizeBytes);
 }
 
 // -------------------- 小工具 --------------------
