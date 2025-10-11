@@ -19,6 +19,8 @@ add_library(mylib STATIC
     gc_malloc/ThreadHeap/SizeClassConfig.cpp
     gc_malloc/ThreadHeap/ThreadHeap.cpp
     gc_malloc/ThreadHeap/ProcessAllocatorContext.cpp
+
+    LockFreeStack/HazardPointers/LockFreeIndexStack.cpp
 )
 
 # 头文件目录（公开给依赖 mylib 的目标）
