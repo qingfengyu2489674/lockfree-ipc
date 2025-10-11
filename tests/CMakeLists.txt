@@ -4,6 +4,10 @@
 add_executable(run_tests
     test_sanity.cpp
     LockFreeStack_Shmem_SingleThread.cpp
+    CentralHeap_gtest.cpp
+    CentralHeap_mproc_test.cpp
+    CentralHeap_mproc_stress.cpp
+    SmallBlocks_mproc_2proc2th.cpp
 )
 
 # 2. 链接库：业务库 + GoogleTest

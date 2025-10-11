@@ -3,7 +3,6 @@
 #include <list>
 #include <mutex>
 #include "FreeChunkManager.hpp"
-#include "ShmMutexLock.hpp"
 
 struct FreeNode {
     FreeNode* next;
@@ -27,5 +26,5 @@ public:
 private:
     FreeNode* head_ = nullptr;
     size_t chunk_count_ = 0;
-    mutable ShmMutexLock shm_mutex_;   
+    // mutable ShmMutexLock shm_mutex_;   
 };

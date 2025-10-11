@@ -7,26 +7,8 @@
 #include "gc_malloc/CentralHeap/CentralHeap.hpp"
 #include "gc_malloc/ThreadHeap/MemSubPool.hpp"
 #include "gc_malloc/ThreadHeap/ThreadHeap.hpp"
+#include "gc_malloc/ThreadHeap/CentralHeapBootstrap.hpp"
 
-namespace {
-    std::atomic<CentralHeap*> g_central{nullptr};   // 进程内发布用
-    thread_local CentralHeap* t_central = nullptr;  // 每线程缓存
-}
-
-void SetupCentral(void* shm_base, size_t bytes) {
-    // 进程 mmap 完成后、启动工作线程前调用一次
-    CentralHeap& ch = CentralHeap::GetInstance(shm_base, bytes);
-    g_central.store(&ch, std::memory_order_release);
-}
-
-static inline CentralHeap* getCentral() {
-    if (t_central) return t_central;
-    CentralHeap* p = g_central.load(std::memory_order_acquire);
-    // 若你保证所有线程在 SetupCentral 之后才启动，也可省这段检查
-    assert(p && "Call SetupCentral(...) before using ThreadHeap");
-    t_central = p;
-    return p;
-}
 
 // -------------------- 对外公共接口 --------------------
 

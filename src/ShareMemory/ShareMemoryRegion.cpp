@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <stdexcept>
 
-SharedMemoryRegion::SharedMemoryRegion(const std::string& name, size_t size, bool create)
+ShareMemoryRegion::ShareMemoryRegion(const std::string& name, size_t size, bool create)
     : name_(name), size_(size) {
     int flags = create ? (O_CREAT | O_RDWR) : O_RDWR;
     fd_ = shm_open(name_.c_str(), flags, 0666);
@@ -20,16 +20,16 @@ SharedMemoryRegion::SharedMemoryRegion(const std::string& name, size_t size, boo
         throw std::runtime_error("mmap failed");
 }
 
-SharedMemoryRegion::~SharedMemoryRegion() {
+ShareMemoryRegion::~ShareMemoryRegion() {
     if (addr_ && addr_ != MAP_FAILED)
         munmap(addr_, size_);
     if (fd_ >= 0)
         close(fd_);
 }
 
-void* SharedMemoryRegion::getMappedAddress() const noexcept { return addr_; }
-size_t SharedMemoryRegion::getMemorySize() const noexcept { return size_; }
+void* ShareMemoryRegion::getMappedAddress() const noexcept { return addr_; }
+size_t ShareMemoryRegion::getMemorySize() const noexcept { return size_; }
 
-void SharedMemoryRegion::unlinkSegment(const std::string& name) noexcept {
+void ShareMemoryRegion::unlinkSegment(const std::string& name) noexcept {
     shm_unlink(name.c_str());
 }

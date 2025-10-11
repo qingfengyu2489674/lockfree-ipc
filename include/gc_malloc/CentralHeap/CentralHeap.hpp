@@ -4,6 +4,9 @@
 #include "ShmFreeChunkList.hpp"
 #include "ShmChunkAllocator.hpp"
 #include "ShareMemory/ShmHeader.hpp"
+#include "ShmMutexLock.hpp"
+#include <mutex>
+
 
 class ShmChunkAllocator;
 class ShmFreeChunkList;
@@ -27,7 +30,7 @@ private:
     CentralHeap(void* shm_base, size_t region_bytes);
     ~CentralHeap() = delete; 
 
-    bool refillCache(); 
+    bool refillCacheNolock(); 
 
     ShmChunkAllocator shm_alloc_;
     ShmFreeChunkList shm_free_list_;
@@ -35,5 +38,7 @@ private:
     size_t self_off_{0};
 
     static constexpr size_t kTargetWatermarkInChunks = 8;
+    mutable ShmMutexLock shm_mutex_; 
+    // mutable std::mutex shm_mutex_;
 };
 

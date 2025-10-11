@@ -35,4 +35,8 @@ private:
     unsigned char* shm_base_   = nullptr;   // 本进程视角的映射基址（注意：跨进程请用偏移传递）
     size_t    region_bytes_ = 0;       // 整个映射区域大小（字节）
     size_t    total_chunks_ = 0;       // 可用 2MB 块总数 = (region_bytes - header_bytes)/kAlignmentSize
+    
+    unsigned char* base_aligned_ = nullptr;
+    size_t         bytes_aligned_ = 0;
+
 };
