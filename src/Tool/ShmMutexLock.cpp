@@ -1,4 +1,4 @@
-#include "gc_malloc/CentralHeap/ShmMutexLock.hpp"
+#include "Tool/ShmMutexLock.hpp"
 
 #include <pthread.h>
 #include <cerrno>

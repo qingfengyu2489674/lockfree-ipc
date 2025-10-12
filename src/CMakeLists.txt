@@ -6,7 +6,6 @@ add_library(mylib STATIC
 
     gc_malloc/CentralHeap/AlignedChunkAllocatorByMmap.cpp
     gc_malloc/CentralHeap/ShmChunkAllocator.cpp
-    gc_malloc/CentralHeap/ShmMutexLock.cpp
     gc_malloc/CentralHeap/ShmFreeChunkList.cpp
     gc_malloc/CentralHeap/FreeChunkListCache.cpp
     gc_malloc/CentralHeap/CentralHeap.cpp
@@ -20,7 +19,13 @@ add_library(mylib STATIC
     gc_malloc/ThreadHeap/ThreadHeap.cpp
     gc_malloc/ThreadHeap/ProcessAllocatorContext.cpp
 
-    LockFreeStack/HazardPointers/LockFreeIndexStack.cpp
+    Tool/ShmMutexLock.cpp
+
+    LockFreeStack/HpSlot.cpp
+    LockFreeStack/HpSlotManager.cpp
+    LockFreeStack/HpRetiredManager.cpp
+
+
 )
 
 # 头文件目录（公开给依赖 mylib 的目标）

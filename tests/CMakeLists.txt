@@ -2,12 +2,12 @@
 
 # 1. 创建一个测试可执行文件
 add_executable(run_tests
-    test_sanity.cpp
     CentralHeap_gtest.cpp
     CentralHeap_mproc_test.cpp
     CentralHeap_mproc_stress.cpp
-    SmallBlocks_mproc_2proc2th.cpp
-    LockFreeBoundedStack_test.cpp
+    TheadHeap_SmallBlocks_mproc_2proc2th.cpp
+    HpSlotManager_test.cpp
+    HpRetiredManager_test.cpp
 )
 
 # 2. 链接库：业务库 + GoogleTest

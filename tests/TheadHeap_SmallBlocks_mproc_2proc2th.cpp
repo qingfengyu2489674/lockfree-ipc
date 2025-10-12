@@ -8,7 +8,7 @@
 #include <mutex>
 #include <chrono>
 
-#include "SharedMemoryTestFixture.hpp"
+#include "fixtures/ShmTestFixture.hpp"
 #include "gc_malloc/ThreadHeap/ThreadHeap.hpp"
 #include "gc_malloc/ThreadHeap/ProcessAllocatorContext.hpp"
 #include "gc_malloc/CentralHeap/CentralHeap.hpp"
