@@ -20,7 +20,7 @@
 class ThreadHeapTestFixture : public SharedMemoryTestFixture {
 protected:
     void SetUp() override {
-        SharedMemoryTestFixture::SetUp();
+        SharedMemoryTestFixture::SetUpTestSuite();
         // 必须在任何线程/分配发生前初始化分配器上下文
         ProcessAllocatorContext::Setup(base, kRegionBytes);
     }

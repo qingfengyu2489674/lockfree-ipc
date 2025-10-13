@@ -14,7 +14,7 @@ enum class ShmState : std::uint8_t {
 struct alignas(64) ShmHeader {
     std::uint32_t magic = 0x43484541;
     std::uint32_t version = 1;
-    std::atomic<ShmState> state{ShmState::kUninit};  // ✅ 语义清晰
+    std::atomic<ShmState> state{ShmState::kUninit};
     std::uint64_t heap_off = 0;
     std::uint64_t data_off = 0;
     std::size_t   region_bytes = 0;

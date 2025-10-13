@@ -42,9 +42,35 @@ std::size_t HpRetiredManager<Node>::collect(std::size_t                 quota,
 template <class Node>
 std::size_t HpRetiredManager<Node>::drainAll(Reclaimer reclaimer) noexcept {
     if (!reclaimer) return 0;
-    std::lock_guard<ShmMutexLock> g(lock_);
-    return drainAllLocked_(reclaimer);
+
+    // 1) 锁内仅“摘链”：把全局退休链整体取走
+    Node* local = nullptr;
+    {
+        std::unique_lock<ShmMutexLock> lk(lock_);
+        local = std::exchange(global_head_, nullptr);
+        // 立刻解锁：回收必须在锁外进行
+        lk.unlock();
+    }
+
+    if (!local) return 0;
+
+    // 2) 锁外回收整段
+    std::size_t freed = 0;
+    for (Node* p = local; p; ) {
+        Node* nxt = p->next;
+        reclaimer(p);      // 可能触发 ThreadHeap/CentralHeap 等，必须在锁外
+        p = nxt;
+        ++freed;
+    }
+
+    // 3) 近似计数在锁外更新即可（仅用于统计，放宽为 relaxed）
+    if (freed) {
+        approx_count_.fetch_sub(freed, std::memory_order_relaxed);
+    }
+    return freed;
 }
+
+
 
 template <class Node>
 std::size_t HpRetiredManager<Node>::getRetiredCount() const noexcept {
@@ -126,28 +152,28 @@ std::size_t HpRetiredManager<Node>::scanAndReclaimUpLocked_(
     return freed;
 }
 
-template <class Node>
-std::size_t HpRetiredManager<Node>::drainAllLocked_(Reclaimer reclaimer) noexcept {
-    if (!global_head_) return 0;
+// template <class Node>
+// std::size_t HpRetiredManager<Node>::drainAllLocked_(Reclaimer reclaimer) noexcept {
+//     if (!global_head_) return 0;
 
-    // 取走整段
-    Node* head = global_head_;
-    global_head_ = nullptr;
+//     // 取走整段
+//     Node* head = global_head_;
+//     global_head_ = nullptr;
 
-    // 统计并释放
-    std::size_t freed = 0;
-    while (head) {
-        Node* nxt = head->next;
-        reclaimer(head);
-        head = nxt;
-        ++freed;
-    }
+//     // 统计并释放
+//     std::size_t freed = 0;
+//     while (head) {
+//         Node* nxt = head->next;
+//         reclaimer(head);
+//         head = nxt;
+//         ++freed;
+//     }
 
-    if (freed != 0) {
-        approx_count_.fetch_sub(freed, std::memory_order_relaxed);
-    }
-    return freed;
-}
+//     if (freed != 0) {
+//         approx_count_.fetch_sub(freed, std::memory_order_relaxed);
+//     }
+//     return freed;
+// }
 
 // ======== 显式实例化（可按需添加/删除） ========
 // 若此 cpp 被多个 Node 类型共用且以头文件形式包含，则可移除这些实例化，

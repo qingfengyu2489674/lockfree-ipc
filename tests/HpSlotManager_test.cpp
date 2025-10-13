@@ -1,13 +1,10 @@
-// tests/test_hp_slot_manager.cpp
 #include <gtest/gtest.h>
 #include <thread>
 #include <vector>
 #include <unordered_set>
-#include <mutex>
 #include <atomic>
 
 #include "fixtures/ThreadHeapTestFixture.hpp"
-
 #include "LockFreeStack/StackNode.hpp"
 #include "LockFreeStack/HpSlot.hpp"
 #include "LockFreeStack/HpSlotManager.hpp"
@@ -58,7 +55,7 @@ TEST_F(HpSlotManagerFixture, HpSlot_ProtectClear_BasicVisibility) {
 TEST_F(HpSlotManagerFixture, HpSlot_PushRetired_Then_DrainAll_LIFOAndClear) {
     HpSlot<TestNode> slot;
 
-    // 依次 pushRetired: 1,2,3  => 链应为 3->2->1
+    // 依次 pushRetired: 1, 2, 3 => 链应为 3->2->1
     auto* n1 = new TestNode(1);
     auto* n2 = new TestNode(2);
     auto* n3 = new TestNode(3);
@@ -72,7 +69,7 @@ TEST_F(HpSlotManagerFixture, HpSlot_PushRetired_Then_DrainAll_LIFOAndClear) {
     EXPECT_NE(head, nullptr);
     EXPECT_EQ(slot.retired_head.load(std::memory_order_acquire), nullptr);
 
-    // 校验 LIFO 顺序：3,2,1
+    // 校验 LIFO 顺序：3, 2, 1
     ASSERT_NE(head, nullptr);
     EXPECT_EQ(head->value, 3);
     ASSERT_NE(head->next, nullptr);
@@ -86,16 +83,14 @@ TEST_F(HpSlotManagerFixture, HpSlot_PushRetired_Then_DrainAll_LIFOAndClear) {
 
 // ---------- 3) 收集者尊重危险指针的流程模拟 ----------
 TEST_F(HpSlotManagerFixture, Collector_Respects_HazardPointers) {
-    // 两个槽：A 用于设置 hazard；B 用于产生退休节点
     HpSlot<TestNode> slotA;
     HpSlot<TestNode> slotB;
 
     // 在 B 中压入若干退休节点：1..5（头插后链为 5->4->3->2->1）
-    std::vector<int> vals = {1,2,3,4,5};
+    std::vector<int> vals = {1, 2, 3, 4, 5};
     for (int v : vals) slotB.pushRetired(new TestNode(v));
 
     // 模拟：A 正在保护“节点 3”（我们得先拿到指针）
-    // drainAll 一次拿到整段，找到 3，重新把整段还回去，再设置 hazard=3。
     TestNode* all = slotB.drainAll();
     ASSERT_NE(all, nullptr);
 
@@ -105,29 +100,22 @@ TEST_F(HpSlotManagerFixture, Collector_Respects_HazardPointers) {
     }
     ASSERT_NE(protected_node, nullptr);
 
-    // 把整段挂回去（模拟在发布前不改变链的语义，允许我们设置 hazard）
-    // 重新头插回去（仍旧 all 的顺序）
-    // 注意：pushRetired 是逐个头插，因此顺序会反转两次，整体仍回到原序（近似即可）
+    // 把整段挂回去
     std::vector<TestNode*> nodes;
     for (TestNode* p = all; p; p = p->next) nodes.push_back(p);
-    // 原 all 是 5->4->3->2->1；逐个 pushRetired 会变回 1->2->3->4->5 的反序
-    // 为了恢复大致的“任意顺序即可”，我们直接重新头插 nodes，保证 B 槽不为空
     for (TestNode* p : nodes) { p->next = nullptr; slotB.pushRetired(p); }
     all = nullptr;
 
     // 设置危险指针：slotA 保护“3”
     slotA.protect(protected_node);
 
-    // ---- 收集者流程：
-    // 1) 建立 live 集（读取各槽 hazard_ptr）
+    // ---- 收集者流程：----
     std::unordered_set<TestNode*> live;
     live.insert(static_cast<TestNode*>(slotA.hazard_ptr.load(std::memory_order_acquire)));
-    // slotB 的 hazard_ptr 为空
 
-    // 2) 从所有槽 drainAll（这里只从 B）
     TestNode* drained = slotB.drainAll();
+    ASSERT_NE(drained, nullptr);
 
-    // 3) “释放”未被保护的节点；被保护的节点暂留（我们暂时只统计并 delete 未保护的）
     std::size_t freed = 0;
     std::vector<TestNode*> survivors;
     for (TestNode* p = drained; p; ) {
@@ -140,15 +128,14 @@ TEST_F(HpSlotManagerFixture, Collector_Respects_HazardPointers) {
         p = nx;
     }
 
-    // 目前应只留下“3”一个存活（被保护）
+    // 目前应只留下“3”一个存活
     ASSERT_EQ(survivors.size(), 1u);
     EXPECT_EQ(survivors[0], protected_node);
 
-    // 4) 取消保护，再做第二轮收集
+    // 取消保护，再做第二轮收集
     slotA.clear();
     live.clear();
 
-    // 第二轮：把残留重新挂回 B，然后再 drainAll 并释放
     for (TestNode* p : survivors) { p->next = nullptr; slotB.pushRetired(p); }
     survivors.clear();
 
@@ -156,13 +143,12 @@ TEST_F(HpSlotManagerFixture, Collector_Respects_HazardPointers) {
     std::size_t freed2 = 0;
     for (TestNode* p = drained2; p; ) {
         TestNode* nx = p->next;
-        // 此时已不在 live 集，应该能释放
         delete p; ++freed2;
         p = nx;
     }
 
-    EXPECT_GT(freed, 0u);      // 第一轮释放了部分
-    EXPECT_EQ(freed2, 1u);     // 第二轮释放了被保护的那个
+    EXPECT_GT(freed, 0u);
+    EXPECT_EQ(freed2, 1u);  // 第二轮释放了被保护的那个
 }
 
 // ---------- 4) Manager：同批线程注册 → 主线程检查 → 同批线程清理 ----------

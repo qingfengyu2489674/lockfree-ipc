@@ -66,11 +66,11 @@ public:
     // 停机/析构阶段：全量回收
     size_type drain_all() noexcept;
 
-        // 调试：返回从栈顶到栈底的值（仅用于单元测试/调试）
-    std::vector<value_type> debug_dump_top_to_bottom() const noexcept;
+    //     // 调试：返回从栈顶到栈底的值（仅用于单元测试/调试）
+    // std::vector<value_type> debug_dump_top_to_bottom() const noexcept;
 
-    // 调试：把栈格式化为字符串 "top -> v1 -> v2 -> ... -> null"
-    std::string debug_to_string() const;
+    // // 调试：把栈格式化为字符串 "top -> v1 -> v2 -> ... -> null"
+    // std::string debug_to_string() const;
 
 private:
     size_type collect_from_snapshot_(size_type quota,

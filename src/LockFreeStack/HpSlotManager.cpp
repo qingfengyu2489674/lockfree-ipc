@@ -58,6 +58,24 @@ HpSlot<Node>* HpSlotManager<Node>::acquireTls() {
     return tls_slot_;
 }
 
+// template <class Node>
+// HpSlot<Node>* HpSlotManager<Node>::acquireTls() {
+//     if (tls_slot_) return tls_slot_;
+//     static thread_local HpSlot<Node>*  tls_slot  = nullptr;
+//     static thread_local SlotNode*      tls_node  = nullptr;
+
+//     tls_slot = new HpSlot<Node>();            // 系统堆；不要 ThreadHeap
+//     tls_node = new SlotNode{tls_slot, nullptr};
+
+//     SlotNode* old = head_.load(std::memory_order_relaxed);
+//     do { tls_node->next = old; }
+//     while(!head_.compare_exchange_weak(
+//             old, tls_node,
+//             std::memory_order_release,
+//             std::memory_order_relaxed));
+//     return tls_slot;
+// }
+
 template <class Node>
 void HpSlotManager<Node>::unregisterTls() {
     HpSlot<Node>* s = tls_slot_;

@@ -66,51 +66,43 @@ void LockFreeStack<T>::push(value_type&& v) noexcept {
 }
 
 
-// ----- try_pop -----
-// 采用 Treiber 栈 + Hazard 保护：
-// 1) 读取 head
-// 2) 发布 hazard 保护该节点
-// 3) 重新确认 head 未变
-// 4) CAS 弹出；成功后移动值 -> 清 hazard -> 退休节点
 template <class T>
 bool LockFreeStack<T>::try_pop(value_type& out) noexcept {
-    auto* slot = slot_mgr_.acquireTls(); // TLS hazard 槽
-
     for (;;) {
         node_type* h = head_.load(std::memory_order_acquire);
         if (!h) {
-            if (slot) slot->clear();
+            // 空栈：不要获取 HP 槽，不要做任何分配/锁
             return false;
         }
 
-        if (slot) slot->protect(h); // 发布 hazard 保护 h
+        // 只有确实“看到了一个节点”时，才拿 TLS 槽并保护
+        auto* slot = slot_mgr_.acquireTls();   // 允许返回 nullptr；必须是无阻塞/无分配的
+        if (slot) slot->protect(h);
 
-        // 再次确认 head 仍是 h（防止 ABA/竞态窗口）
+        // 再次确认 head 仍是 h
         if (h != head_.load(std::memory_order_acquire)) {
             if (slot) slot->clear();
             continue;
         }
 
         node_type* next = h->next;
-        if (head_.compare_exchange_weak(
+        if (head_.compare_exchange_strong(
                 h, next,
-                std::memory_order_acq_rel,
-                std::memory_order_acquire)) {
-            // 独占 h：先取值，再清 hazard，最后退休
+                std::memory_order_acq_rel,     // 成功：获取节点与其内容
+                std::memory_order_relaxed)) {  // 失败：h 已被更新
             out = std::move(h->value);
             if (slot) slot->clear();
-
-            // 将节点并入退休链，由 RetiredManager 统一回收
             retired_mgr_.appendRetiredNodeToList(h);
             return true;
         }
 
-        // CAS 失败，清理后重试
-        if (slot) slot->clear();
+        if (slot) slot->clear(); // CAS 失败：清保护，重试
     }
 }
 
-// ----- state -----
+
+
+// ====================== empty（用 acquire） ======================
 template <class T>
 bool LockFreeStack<T>::empty() const noexcept {
     return head_.load(std::memory_order_acquire) == nullptr;
@@ -178,47 +170,47 @@ LockFreeStack<T>::drain_all() noexcept {
 }
 
 
-#include <sstream>
+// #include <sstream>
 
-// ----- debug_dump_top_to_bottom -----
-template <class T>
-std::vector<typename LockFreeStack<T>::value_type>
-LockFreeStack<T>::debug_dump_top_to_bottom() const noexcept {
-    std::lock_guard<std::mutex> g(dbg_mtx_);
+// // ----- debug_dump_top_to_bottom -----
+// template <class T>
+// std::vector<typename LockFreeStack<T>::value_type>
+// LockFreeStack<T>::debug_dump_top_to_bottom() const noexcept {
+//     std::lock_guard<std::mutex> g(dbg_mtx_);
 
-    std::vector<value_type> out;
-    // 为了观察到“已发布”的节点，这里用 acquire 读 head
-    node_type* p = head_.load(std::memory_order_acquire);
+//     std::vector<value_type> out;
+//     // 为了观察到“已发布”的节点，这里用 acquire 读 head
+//     node_type* p = head_.load(std::memory_order_acquire);
 
-    // 防御性保护，避免循环损坏导致的死循环
-    constexpr std::size_t kHardLimit = 1'000'000;
-    std::size_t guard = 0;
+//     // 防御性保护，避免循环损坏导致的死循环
+//     constexpr std::size_t kHardLimit = 1'000'000;
+//     std::size_t guard = 0;
 
-    while (p && guard++ < kHardLimit) {
-        // 这里假设 StackNode<T> 里是：
-        //   T value;
-        //   node_type* next;   // 非原子（Treiber 常见写法）
-        //
-        // 若你的 next 是 atomic<node_type*>，把下面一行改为：
-        //   p = p->next.load(std::memory_order_acquire);
-        out.push_back(p->value);
-        p = p->next;
-    }
-    return out;
-}
+//     while (p && guard++ < kHardLimit) {
+//         // 这里假设 StackNode<T> 里是：
+//         //   T value;
+//         //   node_type* next;   // 非原子（Treiber 常见写法）
+//         //
+//         // 若你的 next 是 atomic<node_type*>，把下面一行改为：
+//         //   p = p->next.load(std::memory_order_acquire);
+//         out.push_back(p->value);
+//         p = p->next;
+//     }
+//     return out;
+// }
 
-// ----- debug_to_string -----
-template <class T>
-std::string LockFreeStack<T>::debug_to_string() const {
-    auto vals = debug_dump_top_to_bottom();
-    std::ostringstream oss;
-    oss << "top";
-    for (const auto& v : vals) {
-        oss << " -> " << v;
-    }
-    oss << " -> null";
-    return oss.str();
-}
+// // ----- debug_to_string -----
+// template <class T>
+// std::string LockFreeStack<T>::debug_to_string() const {
+//     auto vals = debug_dump_top_to_bottom();
+//     std::ostringstream oss;
+//     oss << "top";
+//     for (const auto& v : vals) {
+//         oss << " -> " << v;
+//     }
+//     oss << " -> null";
+//     return oss.str();
+// }
 
 
 // ====================== 显式实例化 ======================
