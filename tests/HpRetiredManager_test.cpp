@@ -4,12 +4,12 @@
 #include <vector>
 #include <unordered_set>
 #include <atomic>
+#include <algorithm> // std::max
 
 #include "fixtures/ThreadHeapTestFixture.hpp"
 
 #include "LockFreeStack/StackNode.hpp"
 #include "LockFreeStack/HpRetiredManager.hpp"
-
 
 using TestNode = StackNode<int>;
 using RetiredMgr = HpRetiredManager<TestNode>;
@@ -33,9 +33,12 @@ static void split_detach(TestNode* head, std::vector<TestNode*>& out) {
 
 static void reclaim_delete(TestNode* n) noexcept { delete n; }
 
-static bool in_const_set(const void* ctx, const TestNode* p) noexcept {
-    const auto* s = static_cast<const std::unordered_set<const TestNode*>*>(ctx);
-    return s && (s->find(p) != s->end());
+// 将 unordered_set 适配为 collect 需要的 hazard 快照
+static std::vector<const TestNode*> make_snapshot(const std::unordered_set<const TestNode*>& s) {
+    std::vector<const TestNode*> v;
+    v.reserve(s.size());
+    for (auto* p : s) v.push_back(p);
+    return v;
 }
 
 class HpRetiredManagerFixture : public ThreadHeapTestFixture {};
@@ -54,8 +57,8 @@ TEST_F(HpRetiredManagerFixture, AppendSingleNodes_Then_CollectAll) {
     EXPECT_EQ(mgr.getRetiredCount(), 3u);
 
     // 无 hazard，全量回收
-    const std::unordered_set<const TestNode*> empty{};
-    std::size_t freed = mgr.collect(/*quota*/ 1000, &empty, &in_const_set, &reclaim_delete);
+    std::vector<const TestNode*> empty_snapshot; // 空 hazard 快照
+    std::size_t freed = mgr.collect(/*quota*/ 1000, empty_snapshot, &reclaim_delete);
     EXPECT_EQ(freed, 3u);
     EXPECT_EQ(mgr.getRetiredCount(), 0u);
 }
@@ -72,14 +75,14 @@ TEST_F(HpRetiredManagerFixture, AppendList_Then_CollectWithQuota) {
 
     EXPECT_EQ(mgr.getRetiredCount(), 5u);
 
-    const std::unordered_set<const TestNode*> none{};
+    std::vector<const TestNode*> none_snapshot; // 空 hazard 快照
     // 限额回收 2 个
-    std::size_t freed = mgr.collect(/*quota*/ 2, &none, &in_const_set, &reclaim_delete);
+    std::size_t freed = mgr.collect(/*quota*/ 2, none_snapshot, &reclaim_delete);
     EXPECT_EQ(freed, 2u);
     EXPECT_EQ(mgr.getRetiredCount(), 3u);
 
     // 再回收剩余
-    freed = mgr.collect(/*quota*/ 1000, &none, &in_const_set, &reclaim_delete);
+    freed = mgr.collect(/*quota*/ 1000, none_snapshot, &reclaim_delete);
     EXPECT_EQ(freed, 3u);
     EXPECT_EQ(mgr.getRetiredCount(), 0u);
 }
@@ -106,17 +109,19 @@ TEST_F(HpRetiredManagerFixture, HazardProtectedNode_IsDeferred_UntilUnprotected)
     // hazard 集：保护“3”
     std::unordered_set<const TestNode*> hz;
     hz.insert(protected_node);
+    auto hz_snapshot = make_snapshot(hz);
 
     // 第一次回收：应释放 4 个，仅保留受保护的那个
-    std::size_t freed = mgr.collect(/*quota*/ 1000, &hz, &in_const_set, &reclaim_delete);
+    std::size_t freed = mgr.collect(/*quota*/ 1000, hz_snapshot, &reclaim_delete);
     EXPECT_EQ(freed, 4u);
     EXPECT_EQ(mgr.getRetiredCount(), 1u);
 
     // 取消保护
     hz.clear();
+    std::vector<const TestNode*> none_snapshot; // 空 hazard 快照
 
     // 第二次回收：释放剩下的 1 个
-    freed = mgr.collect(/*quota*/ 1000, &hz, &in_const_set, &reclaim_delete);
+    freed = mgr.collect(/*quota*/ 1000, none_snapshot, &reclaim_delete);
     EXPECT_EQ(freed, 1u);
     EXPECT_EQ(mgr.getRetiredCount(), 0u);
 }
@@ -168,10 +173,10 @@ TEST_F(HpRetiredManagerFixture, MultiThreads_Append_Then_Collect) {
     EXPECT_EQ(mgr.getRetiredCount(), expect);
 
     // 无 hazard，全量回收
-    const std::unordered_set<const TestNode*> none{};
+    std::vector<const TestNode*> none_snapshot; // 空 hazard 快照
     std::size_t freed = 0;
     while (mgr.getRetiredCount() > 0) {
-        freed += mgr.collect(/*quota*/ 2048, &none, &in_const_set, &reclaim_delete);
+        freed += mgr.collect(/*quota*/ 2048, none_snapshot, &reclaim_delete);
     }
 
     EXPECT_EQ(freed, expect);

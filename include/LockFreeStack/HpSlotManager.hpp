@@ -24,6 +24,12 @@ public:
     HpSlot<Node>* acquireTls();
     void unregisterTls();
     std::size_t getShotCount() const;
+    void snapshotHazardpoints(std::vector<const Node*>& out) const;
+    std::size_t flushAllRetiredTo(std::atomic<Node*>& dst_head) noexcept;
+
+
+    void retire(Node* n) noexcept;
+    void retireList(Node* head) noexcept;
 
 private:
     struct SlotNode {

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <atomic>
 #include <mutex>
+#include <vector>
 
 #include "Tool/ShmMutexLock.hpp"
 
@@ -19,7 +20,6 @@ template <class Node>
 class HpRetiredManager {
 public:
     using Reclaimer       = void(*)(Node*) noexcept;                           // 节点释放
-    using HazardPredicate = bool(*)(const void* ctx, const Node* p) noexcept;  // true=被保护
 
 public:
     HpRetiredManager() noexcept;
@@ -34,11 +34,10 @@ public:
     // 并入一段退休链（线程安全，整段头插）
     void appendRetiredListToList(Node* head) noexcept;
 
-    // 在外部提供的判定/回收下，回收最多 quota 个未被保护的节点
-    std::size_t collect(std::size_t      quota,
-                        const void*      hazard_ctx,
-                        HazardPredicate  hazard_pred,
-                        Reclaimer        reclaimer) noexcept;
+                        
+    std::size_t collect(std::size_t                 quota,
+                        std::vector<const Node*>&   hazard_snapshot,
+                        Reclaimer                   reclaimer) noexcept;
 
     // 无条件回收全部已退休节点（用于停机/析构）
     std::size_t drainAll(Reclaimer reclaimer) noexcept;
@@ -60,8 +59,7 @@ private:
 
     // 扫描并回收至多 quota 个未被保护节点
     std::size_t scanAndReclaimUpLocked_(std::size_t      quota,
-                                        const void*      hazard_ctx,
-                                        HazardPredicate  hazard_pred,
+                                        std::vector<const Node*>& hazard_snapshot,
                                         Reclaimer        reclaimer) noexcept;
 
     // 无条件回收整个链表

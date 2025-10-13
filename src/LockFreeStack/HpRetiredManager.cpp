@@ -2,6 +2,7 @@
 #include "LockFreeStack/HpRetiredManager.hpp"
 
 #include <cassert>
+#include <unordered_set>
 
 // ========== 公有区 ==========
 
@@ -29,13 +30,13 @@ void HpRetiredManager<Node>::appendRetiredListToList(Node* head) noexcept {
 }
 
 template <class Node>
-std::size_t HpRetiredManager<Node>::collect(std::size_t      quota,
-                                            const void*      hazard_ctx,
-                                            HazardPredicate  hazard_pred,
-                                            Reclaimer        reclaimer) noexcept {
-    if (quota == 0 || !hazard_pred || !reclaimer) return 0;
+std::size_t HpRetiredManager<Node>::collect(std::size_t                 quota,
+                                            std::vector<const Node*>&   hazard_snapshot,
+                                            Reclaimer                   reclaimer) noexcept
+{
+    if (quota == 0 || !reclaimer) return 0;
     std::lock_guard<ShmMutexLock> g(lock_);
-    return scanAndReclaimUpLocked_(quota, hazard_ctx, hazard_pred, reclaimer);
+    return scanAndReclaimUpLocked_(quota, hazard_snapshot, reclaimer);
 }
 
 template <class Node>
@@ -73,12 +74,21 @@ std::size_t HpRetiredManager<Node>::appendListLocked_(Node* head) noexcept {
     return merged;
 }
 
+// 替换原先的 scanAndReclaimUpLocked_ 定义为以下版本
 template <class Node>
-std::size_t HpRetiredManager<Node>::scanAndReclaimUpLocked_(std::size_t      quota,
-                                                            const void*      hazard_ctx,
-                                                            HazardPredicate  hazard_pred,
-                                                            Reclaimer        reclaimer) noexcept {
-    if (!global_head_) return 0;
+std::size_t HpRetiredManager<Node>::scanAndReclaimUpLocked_(
+        std::size_t               quota,
+        std::vector<const Node*>& hazard_snapshot,
+        Reclaimer                 reclaimer) noexcept
+{
+    if (!global_head_ || quota == 0) return 0;
+
+    // 在锁内用快照构建哈希集合，去重并加速判定
+    std::unordered_set<const Node*> hazard_set;
+    hazard_set.reserve(hazard_snapshot.size());
+    for (const Node* h : hazard_snapshot) {
+        if (h) hazard_set.insert(h);
+    }
 
     // 使用哑元节点简化“删除当前结点”的操作
     Node dummy{};
@@ -92,14 +102,15 @@ std::size_t HpRetiredManager<Node>::scanAndReclaimUpLocked_(std::size_t      quo
     while (cur && freed < quota) {
         Node* next = cur->next;
 
-        // 被保护（true） → 不可回收；未被保护（false） → 可回收
-        const bool protected_now = hazard_pred(hazard_ctx, cur);
+        // O(1) 判定当前节点是否被 HP 保护
+        const bool protected_now = (hazard_set.find(cur) != hazard_set.end());
+
         if (!protected_now) {
-            // 从链上摘除并回收
+            // 从链上摘除并回收（保持与原实现一致：锁内回收）
             prev->next = next;
             reclaimer(cur);
-            cur = next;
             ++freed;
+            cur = next;
         } else {
             prev = cur;
             cur  = next;

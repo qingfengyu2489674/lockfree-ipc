@@ -8,6 +8,7 @@ add_executable(run_tests
     TheadHeap_SmallBlocks_mproc_2proc2th.cpp
     HpSlotManager_test.cpp
     HpRetiredManager_test.cpp
+    LockFreeStack_test.cpp
 )
 
 # 2. 链接库：业务库 + GoogleTest

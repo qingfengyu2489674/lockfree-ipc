@@ -24,6 +24,7 @@ add_library(mylib STATIC
     LockFreeStack/HpSlot.cpp
     LockFreeStack/HpSlotManager.cpp
     LockFreeStack/HpRetiredManager.cpp
+    LockFreeStack/LockFreeStack.cpp
 
 
 )

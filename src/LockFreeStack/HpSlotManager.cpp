@@ -82,6 +82,86 @@ std::size_t HpSlotManager<Node>::getShotCount() const {
     return n;
 }
 
+// 在 HpSlotManager.cpp 中补充：snapshotHazardpoints 的模板实现
+template <class Node>
+void HpSlotManager<Node>::snapshotHazardpoints(std::vector<const Node*>& out) const {
+    std::lock_guard<ShmMutexLock> lk(shm_mutx_);
+    for (SlotNode* p = head_; p; p = p->next) {
+        HpSlot<Node>* slot = p->slot;
+        if (!slot) continue;
+        Node* h = slot->hazard_ptr.load(std::memory_order_acquire);
+        if (h) out.push_back(h);
+    }
+}
+
+// ====================== 新增：flushAllRetiredTo ======================
+template <class Node>
+std::size_t HpSlotManager<Node>::flushAllRetiredTo(std::atomic<Node*>& dst_head) noexcept {
+    // 1) 锁内快照槽位指针列表
+    std::vector<HpSlot<Node>*> slots;
+    {
+        std::lock_guard<ShmMutexLock> lk(shm_mutx_);
+        slots.reserve(128);
+        for (SlotNode* p = head_; p; p = p->next) {
+            if (p->slot) slots.push_back(p->slot);
+        }
+    }
+
+    std::size_t total = 0;
+
+    // 2) 锁外逐槽位“原子摘取”退休链，并段插到 dst_head
+    for (HpSlot<Node>* s : slots) {
+        if (!s) continue;
+
+        // 假设 HpSlot<Node> 暴露了 retired_head（std::atomic<Node*>）
+        Node* segHead = s->retired_head.exchange(nullptr, std::memory_order_acq_rel);
+        if (!segHead) continue;
+
+        // 统计段长 & 找到段尾
+        std::size_t cnt = 0;
+        Node* segTail = segHead;
+        ++cnt;
+        while (segTail->next) {
+            segTail = segTail->next;
+            ++cnt;
+        }
+
+        // 段插：segTail->next = oldHead; CAS(dst_head, oldHead, segHead)
+        Node* oldHead = dst_head.load(std::memory_order_acquire);
+        do {
+            segTail->next = oldHead;
+        } while (!dst_head.compare_exchange_weak(
+                     oldHead, segHead,
+                     std::memory_order_release,
+                     std::memory_order_acquire));
+
+        total += cnt;
+    }
+
+    return total;
+}
+
+
+template <class Node>
+void HpSlotManager<Node>::retire(Node* n) noexcept {
+    if (!n) return;
+    HpSlot<Node>* s = acquireTls();   // 确保拿到本线程的槽位
+    s->pushRetired(n);                // CAS 头插到 retired_head
+}
+
+// 一次性退休一段链（head 的 next 字段会被复用，不保序）
+template <class Node>
+void HpSlotManager<Node>::retireList(Node* head) noexcept {
+    if (!head) return;
+    HpSlot<Node>* s = acquireTls();
+    Node* p = head;
+    while (p) {
+        Node* nxt = p->next;
+        s->pushRetired(p);
+        p = nxt;
+    }
+}
+
 template <class Node>
 bool HpSlotManager<Node>::unlinkUnlocked_(HpSlot<Node>* s) noexcept {
     SlotNode** cur = &head_;
