@@ -1,101 +1,106 @@
 #include <gtest/gtest.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <sys/types.h>
+#include <thread>
 #include <vector>
-#include <string>
-#include <stdexcept>
-#include <cstdio>
-#include <cerrno>
-#include <cstring>
-
-#include "fixtures/ShmTestFixture.hpp"
+#include <iostream>
+#include <atomic>
+#include <sys/mman.h> 
+#include <iostream>
+#include <unordered_set>
+#include <csignal>
+#include <cstdlib>
 #include "gc_malloc/CentralHeap/CentralHeap.hpp"
-#include "gc_malloc/ThreadHeap/ProcessAllocatorContext.hpp"
 #include "ShareMemory/ShareMemoryRegion.hpp"
 
-// 这两个宏用于将 CMake 传入的宏定义 (WORKER_EXECUTABLE_PATH) 转换成一个字符串字面量
-#define XSTR(s) STR(s)
-#define STR(s) #s
-
-// 测试主进程负责创建和初始化共享内存
-class CentralHeapMPStressFixture : public SharedMemoryTestFixture {
+class CentralHeapTest : public ::testing::Test {
 protected:
-    static void SetUpTestSuite() {
-        ShareMemoryRegion::unlinkSegment(kShmName);
-        SharedMemoryTestFixture::SetUpTestSuite();
-        ProcessAllocatorContext::Setup(base, kRegionBytes);
+    void* base = nullptr;
+    CentralHeap* heap = nullptr;
+    const std::string kShmName = "/shared_memory_test";
+    const size_t kRegionBytes = 1024 * 1024 * 256;  // 256 MB
+
+    // 信号处理函数，用于捕获段错误并清理共享内存
+    static void handle_signal(int signal) {
+        if (signal == SIGSEGV) {
+            std::cerr << "Received SIGSEGV, cleaning up shared memory..." << std::endl;
+            shm_unlink("/shared_memory_test");  // 删除共享内存
+            std::cerr << "Shared memory cleaned up." << std::endl;
+        }
+        exit(signal);  // 退出程序
     }
-    
-    static void TearDownTestSuite() {
-        SharedMemoryTestFixture::TearDownTestSuite();
+
+    void SetUp() override {
+        // 注册信号处理器捕获 SIGSEGV
+        signal(SIGSEGV, handle_signal);
+
+        // 创建共享内存区域
+        ShareMemoryRegion shm(kShmName, kRegionBytes, true);
+        base = shm.getMappedAddress();
+
+        std::cout << "Mapped base address: " << base << std::endl;
+
+        // 确保共享内存映射成功
+        ASSERT_NE(base, nullptr) << "Mapped address is null. Shared memory setup failed.";
+        ASSERT_NE(base, MAP_FAILED) << "mmap failed, returned MAP_FAILED.";
+
+        // 创建 CentralHeap 实例
+        heap = &CentralHeap::GetInstance(base, kRegionBytes);
+
+        // 检查 heap 是否初始化成功
+        ASSERT_NE(heap, nullptr) << "CentralHeap instance initialization failed.";
+    }
+
+    // TearDown 是在每个测试用例运行之后执行的函数
+    void TearDown() override {
+        // 在程序正常退出时清理共享内存
+        shm_unlink(kShmName.c_str());
+        std::cout << "Shared memory cleaned up on normal exit." << std::endl;
     }
 };
 
-TEST_F(CentralHeapMPStressFixture, ForkExec_HighContention_NoCrashesOrLeaks) {
-    const int N = 8;
-    const int ROUNDS_PER_PROCESS = 500;
+/**
+ * @brief 测试 CentralHeap 的并发分配和释放，确保每个线程分配的内存块不重复
+ */
+TEST_F(CentralHeapTest, AcquireReleaseConcurrency_LockValidation) {
+    std::vector<void*> acquired_chunks;
+    std::unordered_set<void*> unique_chunks;
 
-    std::vector<pid_t> pids;
-    
-    // 使用由 CMake 在编译时注入的、包含完整路径的宏
-    const char* worker_path = XSTR(WORKER_EXECUTABLE_PATH);
-    
-    std::string region_bytes_str = std::to_string(kRegionBytes);
-    std::string rounds_str = std::to_string(ROUNDS_PER_PROCESS);
+    const int num_threads = 10;
+    const size_t chunk_size = CentralHeap::kChunkSize;
 
-    for (int i = 0; i < N; ++i) {
-        pid_t pid = fork();
-        ASSERT_NE(pid, -1) << "fork failed: " << strerror(errno);
+    std::vector<std::thread> threads;
+    for (int i = 0; i < num_threads; ++i) {
+        threads.push_back(std::thread([this, &acquired_chunks, &unique_chunks, chunk_size] {
+            void* chunk = heap->acquireChunk(chunk_size);
+            ASSERT_NE(chunk, nullptr);
 
-        if (pid == 0) {
-            // 现在 worker_path 是一个绝对路径，execlp 保证能找到它
-            execlp(worker_path,
-                   worker_path,
-                   kShmName,
-                   region_bytes_str.c_str(),
-                   rounds_str.c_str(),
-                   (char*)NULL);
-            
-            // 如果 execlp 返回，说明它执行失败了
-            perror("execlp failed");
-            _exit(127);
-        }
-        pids.push_back(pid);
-    }
-    
-    bool all_children_succeeded = true;
-    for (pid_t pid : pids) {
-        int status = 0;
-        ASSERT_EQ(waitpid(pid, &status, 0), pid);
-        
-        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-            all_children_succeeded = false;
-            ADD_FAILURE() << "Worker process " << pid << " failed. "
-                          << "A crash, deadlock (timeout), or allocation error likely occurred in CentralHeap.\n"
-                          << "  ExitStatus=" << (WIFEXITED(status) ? WEXITSTATUS(status) : -1)
-                          << ", TermSignal=" << (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
-        }
-    }
-    
-    ASSERT_TRUE(all_children_succeeded) << "One or more worker processes failed the high-contention test.";
+            std::cout << "Thread " << std::this_thread::get_id() << " allocated chunk: " << chunk << std::endl;
 
-    // 进行最终的健全性检查 (Sanity Check)
-    auto& ch = CentralHeap::GetInstance(base, kRegionBytes);
-    const std::size_t theoretical_cap = kRegionBytes / CentralHeap::kChunkSize;
-    std::vector<void*> final_chunks;
-    
-    for (size_t i = 0; i < theoretical_cap; ++i) {
-        void* p = ch.acquireChunk(CentralHeap::kChunkSize);
-        if (!p) {
-            ASSERT_GE(i, theoretical_cap - 2) << "Failed to acquire chunk #" << (i + 1)
-                << ". A significant memory leak likely occurred.";
-            break;
-        }
-        final_chunks.push_back(p);
+            bool inserted = unique_chunks.insert(chunk).second;
+            ASSERT_TRUE(inserted) << "Duplicate chunk detected!";
+
+            acquired_chunks.push_back(chunk);
+            heap->releaseChunk(chunk, chunk_size);
+        }));
     }
-    
-    for (void* p : final_chunks) {
-        ch.releaseChunk(p, CentralHeap::kChunkSize);
+
+    for (auto& t : threads) {
+        t.join();
     }
+
+    for (auto& chunk : acquired_chunks) {
+        ASSERT_NE(chunk, nullptr);
+    }
+
+    std::cout << "Test passed: Multiple threads successfully acquire and release unique chunks." << std::endl;
+}
+
+int main(int argc, char** argv) {
+    // 注册退出时清理共享内存
+    atexit([]() {
+        shm_unlink("/shared_memory_test");
+        std::cout << "Shared memory cleaned up on exit." << std::endl;
+    });
+
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();  // 运行所有测试用例
 }

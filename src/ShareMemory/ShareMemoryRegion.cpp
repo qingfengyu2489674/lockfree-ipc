@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <cstring>   // std::memset
 #include <cassert>
+#include <iostream>
 
 ShareMemoryRegion::ShareMemoryRegion(const std::string& name, size_t size, bool create)
     : name_(name), size_(size) {
@@ -24,11 +25,20 @@ ShareMemoryRegion::ShareMemoryRegion(const std::string& name, size_t size, bool 
         throw std::runtime_error("mmap failed for " + name_);
 
     // ------------------------------------------------------------
-    // 关键：初始化 ShmHeader（仅第一次创建时执行）
+    // 关键：检查 ShmHeader 初始化是否已经完成
     // ------------------------------------------------------------
+    auto* header = reinterpret_cast<ShmHeader*>(addr_);
+    
+    // 如果已初始化（magic 值已存在），跳过初始化
+    if (header->magic == 0x43484541) {
+        // "AHEC" 已经是 CentralHeap 的标记，说明已经初始化
+        std::cout << "Shared memory already initialized, skipping initialization." << std::endl;
+        return;
+    }
+
+    // 如果是新创建的共享内存，进行初始化
     if (create) {
         assert(size_ >= sizeof(ShmHeader) && "shared memory too small");
-        auto* header = static_cast<ShmHeader*>(addr_);
 
         // 写入魔数、版本、状态机初值
         header->magic         = 0x43484541; // "AHEC" = CentralHeap
@@ -41,8 +51,11 @@ ShareMemoryRegion::ShareMemoryRegion(const std::string& name, size_t size, bool 
         // 为安全起见，把 ShmHeader 之后的区域清零
         std::memset(reinterpret_cast<unsigned char*>(addr_) + sizeof(ShmHeader),
                     0, size_ - sizeof(ShmHeader));
+
+        std::cout << "Shared memory initialized." << std::endl;
     }
 }
+
 
 ShareMemoryRegion::~ShareMemoryRegion() {
     if (addr_ && addr_ != MAP_FAILED)

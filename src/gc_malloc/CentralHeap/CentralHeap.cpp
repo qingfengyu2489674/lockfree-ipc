@@ -69,28 +69,32 @@ CentralHeap::CentralHeap(void* shm_base, std::size_t region_bytes)
 // 2. CentralHeap 的核心逻辑实现
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// CentralHeap 核心逻辑实现
+// -----------------------------------------------------------------------------
+
 void* CentralHeap::acquireChunk(size_t size) {
     assert(size == kChunkSize);
 
-    std::lock_guard<ShmMutexLock> guard(shm_mutex_);
+    // 显式锁定
+    shm_mutex_.lock();
 
     void* chunk = shm_free_list_.acquire();
-    if(chunk != nullptr) { 
+    if (chunk != nullptr) { 
+        shm_mutex_.unlock();  // 解锁
         return chunk;
     }
 
-    bool refill_ok  = refillCacheNolock();
-    if(!refill_ok ) {
+    bool refill_ok = refillCacheNolock();
+    if (!refill_ok) {
         std::cerr << "[CentralHeap::AcquireChunk] WARNING: Failed to refill cache. "
-            << "System might be out of memory." << std::endl;
+                  << "System might be out of memory." << std::endl;
     }
 
     chunk = shm_free_list_.acquire();
-    if(chunk != nullptr) { 
-        return chunk;
-    }
+    shm_mutex_.unlock();  // 解锁
 
-    return nullptr;
+    return chunk;
 }
 
 bool CentralHeap::refillCacheNolock() {
@@ -98,10 +102,11 @@ bool CentralHeap::refillCacheNolock() {
         return true;
     }
 
-    while(shm_free_list_.getCacheCount() <= kTargetWatermarkInChunks) {
+    while (shm_free_list_.getCacheCount() <= kTargetWatermarkInChunks) {
         void* chunk = shm_alloc_.allocate(kChunkSize);
-        if(!chunk)
+        if (!chunk) {
             return false;
+        }
         shm_free_list_.deposit(chunk);
     }
 
@@ -110,14 +115,10 @@ bool CentralHeap::refillCacheNolock() {
 
 void CentralHeap::releaseChunk(void* chunk, size_t size) {
     assert(size == kChunkSize);
-    std::lock_guard<ShmMutexLock> guard(shm_mutex_);
 
-    // if(FreeChunkManager_ptr->getCacheCount() < kMaxWatermarkInChunks) {
-    //     FreeChunkManager_ptr->deposit(chunk);
-    // } else {
-    //     ChunkAllocatorFromKernel_ptr->deallocate(chunk, kChunkSize);
-    // }
+    // 显式锁定
+    shm_mutex_.lock();
 
     shm_free_list_.deposit(chunk);
+    shm_mutex_.unlock();  // 解锁
 }
-
