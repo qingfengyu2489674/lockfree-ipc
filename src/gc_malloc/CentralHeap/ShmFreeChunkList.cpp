@@ -29,26 +29,8 @@ void* ShmFreeChunkList::acquire() {
     --chunk_count_;  // 减少 chunk 数量
     node->next = nullptr;
 
-    // 打印所分配的 chunk 地址
-    std::cout << "Allocated chunk: " << node << std::endl;
-
-    // 打印链表内剩余的 chunk 地址
-    std::cout << "Remaining chunks: ";
-    printRemainingChunks();  // 辅助函数，遍历链表并打印剩余节点的地址
-    std::cout << std::endl;
-
     return static_cast<void*>(node);  // 返回分配的 chunk
 }
-
-// 辅助函数：打印链表内剩余的 chunk 地址
-void ShmFreeChunkList::printRemainingChunks() {
-    FreeNode* current = head_;
-    while (current != nullptr) {
-        std::cout << current << " ";  // 打印每个剩余 chunk 的地址
-        current = current->next;
-    }
-}
-
 
 void ShmFreeChunkList::deposit(void* chunk) {
     if(!chunk) return;

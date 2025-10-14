@@ -15,7 +15,6 @@ public:
     void deposit(void* chunk) override;
 
     size_t getCacheCount() const override;
-    void printRemainingChunks();
 
     ShmFreeChunkList();
     ~ShmFreeChunkList() override;

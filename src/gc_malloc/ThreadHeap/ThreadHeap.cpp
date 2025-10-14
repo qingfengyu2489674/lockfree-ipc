@@ -27,12 +27,21 @@ void* ThreadHeap::allocate(std::size_t nbytes) noexcept {
 
     auto* hdr = static_cast<BlockHeader*>(block_ptr);
     th.attachUsed(hdr);
-    return block_ptr;
+
+    void* user_ptr = static_cast<void*>(
+        reinterpret_cast<unsigned char*>(block_ptr) + sizeof(BlockHeader)
+    );
+    
+    return user_ptr;
 }
 
 void ThreadHeap::deallocate(void* ptr) noexcept {
     if (!ptr) return;
-    static_cast<BlockHeader*>(ptr)->storeFree();  // 跨线程释放只改状态
+    void* block_ptr = static_cast<void*>(
+        reinterpret_cast<unsigned char*>(ptr) - sizeof(BlockHeader)
+    );
+
+    static_cast<BlockHeader*>(block_ptr)->storeFree();  // 跨线程释放只改状态
 }
 
 std::size_t ThreadHeap::garbageCollect(std::size_t max_scan) noexcept {
@@ -67,7 +76,7 @@ ThreadHeap::~ThreadHeap() {
 }
 
 std::size_t ThreadHeap::sizeToClass_(std::size_t nbytes) noexcept {
-    return SizeClassConfig::SizeToClass(nbytes);
+    return SizeClassConfig::SizeToClass(nbytes + sizeof(BlockHeader));
 }
 
 // ---- 与 SizeClassPoolManager 的回调桥 ----

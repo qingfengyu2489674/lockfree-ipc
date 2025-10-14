@@ -9,7 +9,7 @@ class ShareMemoryRegion;
 struct SharedMemoryTestFixture : public ::testing::Test {
 public: // <--- 为常量和类型定义设置 public区域
     static constexpr const char* kShmName = "/lf_ipc_test";
-    static constexpr std::size_t kRegionBytes = 128u << 20; // 128MB
+    static constexpr std::size_t kRegionBytes = 256u << 20; // 128MB
 
 protected: // <--- 为实现细节保留 protected 区域
     inline static ShareMemoryRegion* shm = nullptr;
