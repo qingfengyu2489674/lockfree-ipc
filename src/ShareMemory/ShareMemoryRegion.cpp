@@ -59,7 +59,7 @@ ShareMemoryRegion::ShareMemoryRegion(const std::string& name, size_t size, bool 
 
 ShareMemoryRegion::~ShareMemoryRegion() {
     if (addr_ && addr_ != MAP_FAILED)
-        munmap(addr_, size_);
+        // munmap(addr_, size_);
     if (fd_ >= 0)
         close(fd_);
 }

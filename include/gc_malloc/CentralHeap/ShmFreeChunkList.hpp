@@ -15,6 +15,7 @@ public:
     void deposit(void* chunk) override;
 
     size_t getCacheCount() const override;
+    void printRemainingChunks();
 
     ShmFreeChunkList();
     ~ShmFreeChunkList() override;
@@ -26,5 +27,5 @@ public:
 private:
     FreeNode* head_ = nullptr;
     size_t chunk_count_ = 0;
-    // mutable ShmMutexLock shm_mutex_;   
+    // mutable ShmMutexLock shm_mutex_;
 };

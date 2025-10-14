@@ -19,15 +19,17 @@
  */
 class ThreadHeapTestFixture : public SharedMemoryTestFixture {
 protected:
-    void SetUp() override {
+    static void SetUpTestSuite(){
         SharedMemoryTestFixture::SetUpTestSuite();
         // 必须在任何线程/分配发生前初始化分配器上下文
         ProcessAllocatorContext::Setup(base, kRegionBytes);
+        std::cout << "ProcessAllocatorContext has been set up." << std::endl;
     }
 
-    void TearDown() override {
+    static void TearDownTestSuite() {
         // 如果你的分配器需要显式收尾（比如 Shutdown/Finalize），在这里调用：
         // ProcessAllocatorContext::Shutdown();
-        SharedMemoryTestFixture::TearDown();
+        std::cout << "ProcessAllocatorContext is about to be shut down." << std::endl;
+        SharedMemoryTestFixture::TearDownTestSuite();
     }
 };

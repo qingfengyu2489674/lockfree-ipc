@@ -77,11 +77,10 @@ void* CentralHeap::acquireChunk(size_t size) {
     assert(size == kChunkSize);
 
     // 显式锁定
-    shm_mutex_.lock();
+    std::lock_guard<ShmMutexLock> lock(shm_mutex_);
 
     void* chunk = shm_free_list_.acquire();
     if (chunk != nullptr) { 
-        shm_mutex_.unlock();  // 解锁
         return chunk;
     }
 
@@ -92,7 +91,6 @@ void* CentralHeap::acquireChunk(size_t size) {
     }
 
     chunk = shm_free_list_.acquire();
-    shm_mutex_.unlock();  // 解锁
 
     return chunk;
 }
@@ -117,8 +115,7 @@ void CentralHeap::releaseChunk(void* chunk, size_t size) {
     assert(size == kChunkSize);
 
     // 显式锁定
-    shm_mutex_.lock();
+    std::lock_guard<ShmMutexLock> lock(shm_mutex_);
 
     shm_free_list_.deposit(chunk);
-    shm_mutex_.unlock();  // 解锁
 }
