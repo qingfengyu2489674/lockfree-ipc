@@ -185,36 +185,36 @@ TEST_F(LockFreeStackFixture, ConcurrentPushPop_NoDataLossOrCorruption) {
 }
 
 
-// // 5) 单进程多线程：验证线程退出时的自动清理
-// TEST_F(LockFreeStackFixture, SingleProcess_ThreadExitCleanupVerification) {
-//     // *** 关键修改：使用新的类型别名 ***
-//     auto* slot_mgr = new (ThreadHeap::allocate(sizeof(StackSlotMgr))) StackSlotMgr();
+// 5) 单进程多线程：验证线程退出时的自动清理
+TEST_F(LockFreeStackFixture, SingleProcess_ThreadExitCleanupVerification) {
+    // *** 关键修改：使用新的类型别名 ***
+    auto* slot_mgr = new (ThreadHeap::allocate(sizeof(StackSlotMgr))) StackSlotMgr();
 
-//     const int num_threads = 4;
-//     std::vector<std::thread> threads;
+    const int num_threads = 4;
+    std::vector<std::thread> threads;
 
-//     for (int i = 0; i < num_threads; ++i) {
-//         threads.emplace_back([slot_mgr]() {
-//             // acquireTls 返回的类型现在与 SlotType 匹配
-//             auto* slot = slot_mgr->acquireTls();
-//             ASSERT_NE(slot, nullptr);
-//             std::this_thread::sleep_for(std::chrono::milliseconds(20));
-//         });
-//     }
+    for (int i = 0; i < num_threads; ++i) {
+        threads.emplace_back([slot_mgr]() {
+            // acquireTls 返回的类型现在与 SlotType 匹配
+            auto* slot = slot_mgr->acquireTls();
+            ASSERT_NE(slot, nullptr);
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        });
+    }
 
-//     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-//     EXPECT_EQ(slot_mgr->getSlotCount(), num_threads);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    EXPECT_EQ(slot_mgr->getSlotCount(), num_threads);
 
-//     for (auto& t : threads) {
-//         t.join();
-//     }
+    for (auto& t : threads) {
+        t.join();
+    }
     
-//     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-//     EXPECT_EQ(slot_mgr->getSlotCount(), 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    EXPECT_EQ(slot_mgr->getSlotCount(), 0);
 
-//     // 清理
-//     slot_mgr->~StackSlotMgr();
-//     ThreadHeap::deallocate(slot_mgr);
-// }
+    // 清理
+    slot_mgr->~StackSlotMgr();
+    ThreadHeap::deallocate(slot_mgr);
+}
 
-// // (暂时移除了 MultiProcessMultiThread 测试，因为它需要对 SharedStressTestBlock 进行类似的模板适配)
+// (暂时移除了 MultiProcessMultiThread 测试，因为它需要对 SharedStressTestBlock 进行类似的模板适配)
