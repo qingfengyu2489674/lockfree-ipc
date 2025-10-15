@@ -1,5 +1,5 @@
 #pragma once
-#include "LockFreeStack/HpSlot.hpp"
+#include "Hazard/HpSlot.hpp"
 #include <functional>
 
 namespace HazardPointerDetail {

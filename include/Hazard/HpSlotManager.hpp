@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <vector>
 #include <mutex>
-#include "LockFreeStack/HpSlot.hpp"
+#include "Hazard/HpSlot.hpp"
 #include "Tool/ShmMutexLock.hpp"
-#include "LockFreeStack/HpSlotManagerDetail.hpp"
+#include "Hazard/HpSlotManagerDetail.hpp"
 #include "AllocatorPolicies.hpp"
 
 

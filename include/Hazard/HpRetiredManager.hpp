@@ -9,10 +9,7 @@
 #include "Tool/ShmMutexLock.hpp"
 #include "AllocatorPolicies.hpp"
 
-template <
-    class Node, 
-    class AllocPolicy = DefaultHeapPolicy
->
+template <class Node, class AllocPolicy = DefaultHeapPolicy>
 class HpRetiredManager {
 public:
     using Reclaimer       = void(*)(Node*) noexcept;

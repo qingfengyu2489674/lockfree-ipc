@@ -29,7 +29,9 @@ void HpRetiredManager<Node, AllocPolicy>::appendRetiredList(Node* head) noexcept
 
 template <class Node, class AllocPolicy>
 std::size_t HpRetiredManager<Node, AllocPolicy>::collectRetired(std::size_t quota, const std::vector<const Node*>& hazard_snapshot) noexcept {
-    if (quota == 0) return 0;
+    if (quota == 0) {
+        quota = static_cast<std::size_t>(-1); 
+    }
     std::lock_guard<ShmMutexLock> guard(lock_);
     return scanAndReclaimLocked_(quota, hazard_snapshot);
 }
