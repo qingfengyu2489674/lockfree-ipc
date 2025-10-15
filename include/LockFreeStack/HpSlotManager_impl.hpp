@@ -17,6 +17,12 @@ HpSlotManager<Node, MaxPointers, AllocPolicy>::~HpSlotManager() {
         AllocPolicy::deallocate(current);
         current = next;
     }
+
+    if (tls_slot_ != nullptr) {
+        // 通过直接清空 on_exit，我们阻止了在程序退出后期对悬垂指针的访问。
+        tls_exit_handler_.on_exit = nullptr;
+        tls_slot_ = nullptr; // 逻辑上也清空槽位指针
+    }
 }
 
 

@@ -1,230 +1,532 @@
-#pragma once
-#include <cstddef>
-#include <utility>
-#include <new>
-#include "atomic_intrinsics.hpp"      // 提供 load_acquire_ptr / store_release_ptr / cas_acq_rel_ptr
-#include "LockFreeNode.hpp"
-#include "LockFreeRetiredList.hpp"
+// tests/LockFreeStack_test.cpp
+#include <gtest/gtest.h>
+#include <iostream>
+#include <string>
 
-// ============================
-//      Minimal Hazard Pointer
-// ============================
+#include "fixtures/ThreadHeapTestFixture.hpp"
+#include "LockFreeStack/StackNode.hpp"
+#include "LockFreeStack/HpSlotManager.hpp"
+#include "LockFreeStack/HpRetiredManager.hpp"
+#include "LockFreeStack/LockFreeStack.hpp"
+#include "gc_malloc/ThreadHeap/ThreadHeap.hpp"
 
-// ---- 配置 ----
-constexpr std::size_t hp_per_thread  = 1;        // 每线程 HP 个数（Treiber 栈 pop 只需 1 个）
-constexpr std::size_t hp_max_threads = 1024;     // 允许出现过的线程上限（不复用）
-constexpr std::size_t hp_max_slots   = hp_per_thread * hp_max_threads;
+using value_t    = int;
+using node_t     = StackNode<value_t>;
+using SlotMgr    = HpSlotManager<node_t>;
+using RetiredMgr = HpRetiredManager<node_t>;
+using Stack      = LockFreeStack<value_t>;
 
-// ---- 全局槽 & 线性分配游标 ----
-inline void*       hp_slots[hp_max_slots] = {nullptr};
-inline std::size_t next_hp_slot = 0;
+class LockFreeStackFixture : public ThreadHeapTestFixture {};
 
-// ---- 原子访问（带内存序）----
-inline void hp_store(std::size_t idx, void* p) noexcept {
-    __atomic_store_n(&hp_slots[idx], p, __ATOMIC_RELEASE);
+// ============================================================================
+// 1) 空栈
+// ============================================================================
+TEST_F(LockFreeStackFixture, EmptyStack_TryPopFalse) {
+// 使用线程堆分配管理器
+SlotMgr* slot_mgr = new (ThreadHeap::allocate(sizeof(SlotMgr))) SlotMgr();
+RetiredMgr* retired_mgr = new (ThreadHeap::allocate(sizeof(RetiredMgr))) RetiredMgr();
+
+// 确保 LockFreeStack 也使用共享内存进行分配
+Stack* st = new (ThreadHeap::allocate(sizeof(Stack))) Stack(*slot_mgr, *retired_mgr);
+
+std::cout << "\n[EmptyStack] init: " << "[Not Outputting debug_to_string()]" << std::endl;
+
+int out = 0;
+EXPECT_TRUE(st->isEmpty());
+EXPECT_FALSE(st->tryPop(out));
+EXPECT_TRUE(st->isEmpty());
+EXPECT_EQ(retired_mgr->getRetiredCount(), 0u);
+
+std::cout << "[EmptyStack] final: " << "[Not Outputting debug_to_string()]" << std::endl;
+
+// 清理
+ThreadHeap::deallocate(slot_mgr);
+ThreadHeap::deallocate(retired_mgr);
+ThreadHeap::deallocate(st); // 清理 Stack 对象
+
 }
-inline void* hp_load(std::size_t idx) noexcept {
-    return __atomic_load_n(&hp_slots[idx], __ATOMIC_ACQUIRE);
+
+// ============================================================================
+// 2) 基础 LIFO
+// ============================================================================
+TEST_F(LockFreeStackFixture, PushThenPop_LIFOOrder) {
+// 使用线程堆分配管理器
+SlotMgr* slot_mgr = new (ThreadHeap::allocate(sizeof(SlotMgr))) SlotMgr();
+RetiredMgr* retired_mgr = new (ThreadHeap::allocate(sizeof(RetiredMgr))) RetiredMgr();
+
+code
+Code
+download
+content_copy
+expand_less
+// 确保 LockFreeStack 也使用共享内存进行分配
+Stack* st = new (ThreadHeap::allocate(sizeof(Stack))) Stack(*slot_mgr, *retired_mgr);
+
+for (int v = 1; v <= 5; ++v) st->push(v);
+std::cout << "\n[LIFO] after push 1..5: " << "[Not Outputting debug_to_string()]" << std::endl;
+
+int out = 0;
+for (int expect = 5; expect >= 1; --expect) {
+    ASSERT_TRUE(st->tryPop(out));
+    EXPECT_EQ(out, expect);
 }
 
-// 遍历全部槽（供回收器扫描）
-template <class F>
-inline void for_each_hp_slot(F&& f) {
-    for (std::size_t i = 0; i < hp_max_slots; ++i) {
-        f(i, hp_load(i));
+EXPECT_TRUE(st->isEmpty());
+std::cout << "[LIFO] after pop all: " << "[Not Outputting debug_to_string()]" << std::endl;
+
+EXPECT_EQ(retired_mgr->getRetiredCount(), 5u);
+std::size_t freed = st->collectRetired(1000);
+EXPECT_EQ(freed, 5u);
+EXPECT_EQ(retired_mgr->getRetiredCount(), 0u);
+
+// 清理
+ThreadHeap::deallocate(slot_mgr);
+ThreadHeap::deallocate(retired_mgr);
+ThreadHeap::deallocate(st); // 清理 Stack 对象
+
+}
+
+// ============================================================================
+// 3) drain_all：停机/析构场景，全量回收
+// ============================================================================
+TEST_F(LockFreeStackFixture, DrainAll_ForceCollectEverything) {
+// 使用线程堆分配管理器
+SlotMgr* slot_mgr = new (ThreadHeap::allocate(sizeof(SlotMgr))) SlotMgr();
+RetiredMgr* retired_mgr = new (ThreadHeap::allocate(sizeof(RetiredMgr))) RetiredMgr();
+
+code
+Code
+download
+content_copy
+expand_less
+// 确保 LockFreeStack 也使用共享内存进行分配
+Stack* st = new (ThreadHeap::allocate(sizeof(Stack))) Stack(*slot_mgr, *retired_mgr);
+
+for (int i = 0; i < 3; ++i) st->push(i);
+std::cout << "\n[DrainAll] after push 3: " << "[Not Outputting debug_to_string()]" << std::endl;
+
+int out = 0;
+for (int i = 0; i < 3; ++i) ASSERT_TRUE(st->tryPop(out));
+EXPECT_TRUE(st->isEmpty());
+EXPECT_EQ(retired_mgr->getRetiredCount(), 3u);
+
+std::size_t freed = st->drainAll();
+EXPECT_EQ(freed, 3u);
+EXPECT_EQ(retired_mgr->getRetiredCount(), 0u);
+
+std::cout << "[DrainAll] after drain_all: " << "[Not Outputting debug_to_string()]" << std::endl;
+
+// 清理
+ThreadHeap::deallocate(slot_mgr);
+ThreadHeap::deallocate(retired_mgr);
+ThreadHeap::deallocate(st); // 清理 Stack 对象
+
+}
+
+#include <thread>
+#include <vector>
+#include <atomic>
+#include <numeric>   // C++17, for std::iota
+#include <algorithm> // for std::sort
+
+// ============================================================================
+// 4) 多线程竞争 (Producer-Consumer)
+// ============================================================================
+
+TEST_F(LockFreeStackFixture, ConcurrentPushPop_NoDataLossOrCorruption) {
+// 1. 测试参数配置
+// 可以调整这些参数来改变测试的压力
+const int num_producers = 4;
+const int num_consumers = 4;
+const int items_per_producer = 25000;
+const int total_items = num_producers * items_per_producer;
+
+code
+Code
+download
+content_copy
+expand_less
+// 2. 初始化共享资源 (遵循你的测试模式)
+SlotMgr* slot_mgr = new (ThreadHeap::allocate(sizeof(SlotMgr))) SlotMgr();
+RetiredMgr* retired_mgr = new (ThreadHeap::allocate(sizeof(RetiredMgr))) RetiredMgr();
+Stack* st = new (ThreadHeap::allocate(sizeof(Stack))) Stack(*slot_mgr, *retired_mgr);
+
+// 原子计数器，用于协调消费者何时停止
+std::atomic<int> items_remaining_to_pop(total_items);
+
+// 3. 定义生产者和消费者任务 (使用 lambda 表达式)
+
+// 生产者任务：每个生产者负责推入一个不重叠的整数区间
+auto producer_task = [&](int start_value) {
+    for (int i = 0; i < items_per_producer; ++i) {
+        st->push(start_value + i);
     }
+};
+
+// 消费者任务：持续弹出，直到所有物品都被弹出为止
+auto consumer_task = [&](std::vector<int>& local_popped_items) {
+    // 预分配足够空间，避免在循环中频繁重新分配内存
+    local_popped_items.reserve(items_per_producer * 2); 
+    int item;
+
+    // 只要还有物品需要被弹出，就继续尝试
+    while (items_remaining_to_pop.load(std::memory_order_acquire) > 0) {
+        if (st->tryPop(item)) {
+            local_popped_items.push_back(item);
+            // 只有在成功弹出一个物品后，才减少总计数器
+            items_remaining_to_pop.fetch_sub(1, std::memory_order_acq_rel);
+        }
+        // 如果 pop 返回 false (栈暂时为空)，则循环继续，不做任何操作
+    }
+};
+
+// 4. 创建并启动所有线程
+std::vector<std::thread> all_threads;
+all_threads.reserve(num_producers + num_consumers);
+
+// 为每个消费者准备一个独立的 vector 来存储结果，避免竞争
+std::vector<std::vector<int>> consumer_results(num_consumers);
+
+// 启动所有生产者线程
+for (int i = 0; i < num_producers; ++i) {
+    all_threads.emplace_back(producer_task, i * items_per_producer);
 }
 
-// ---- 线程本地注册（方案A：只增不还；析构仅清空自己槽）----
-class HPThreadReg {
-public:
-    HPThreadReg()
-        : hpFirstSlotIndex_(static_cast<std::size_t>(-1))
-    {
-        // 原子领取我这线程的一段连续槽 [b, b + hp_per_thread)
-        std::size_t b = __atomic_fetch_add(&next_hp_slot, hp_per_thread, __ATOMIC_ACQ_REL);
-        // 用减法写法避免无符号溢出
-        if (b > hp_max_slots - hp_per_thread) {
-            std::terminate(); // 也可改为抛异常或记录错误
-        }
-        hpFirstSlotIndex_ = b;
+// 启动所有消费者线程
+for (int i = 0; i < num_consumers; ++i) {
+    // 使用 std::ref 来传递 vector 的引用
+    all_threads.emplace_back(consumer_task, std::ref(consumer_results[i]));
+}
 
-        // 初始化为 nullptr（release-store）
-        for (std::size_t i = 0; i < hp_per_thread; ++i) {
-            hp_store(hpFirstSlotIndex_ + i, nullptr);
-        }
-    }
+// 5. 等待所有线程执行完毕
+for (auto& t : all_threads) {
+    t.join();
+}
 
-    ~HPThreadReg() {
-        if (hpFirstSlotIndex_ != static_cast<std::size_t>(-1)) {
-            // 清空自己的槽，避免“僵尸 HP”阻塞回收
-            for (std::size_t i = 0; i < hp_per_thread; ++i) {
-                hp_store(hpFirstSlotIndex_ + i, nullptr);
+// 6. 验证结果的正确性
+
+// 6.1 验证最终状态：计数器归零，栈为空
+EXPECT_EQ(items_remaining_to_pop.load(), 0);
+EXPECT_TRUE(st->isEmpty());
+
+// 6.2 将所有消费者弹出的数据汇总到一个 vector 中
+std::vector<int> all_popped_items;
+all_popped_items.reserve(total_items);
+for (const auto& vec : consumer_results) {
+    all_popped_items.insert(all_popped_items.end(), vec.begin(), vec.end());
+}
+
+// 6.3 创建一个包含所有期望值的、已排序的 vector
+std::vector<int> expected_items(total_items);
+std::iota(expected_items.begin(), expected_items.end(), 0); // 填充 0, 1, 2, ...
+
+// 6.4 对弹出的结果进行排序，以便与期望值进行比较
+std::sort(all_popped_items.begin(), all_popped_items.end());
+
+// 6.5 最终断言：大小相等，内容也完全相同
+ASSERT_EQ(all_popped_items.size(), (size_t)total_items);
+EXPECT_EQ(all_popped_items, expected_items) << "Pushed and popped items do not match!";
+
+// 7. 验证内存回收机制
+EXPECT_EQ(retired_mgr->getRetiredCount(), (unsigned)total_items);
+std::size_t freed = st->collectRetired(total_items * 2); // 使用一个足够大的配额
+EXPECT_EQ(freed, (unsigned)total_items);
+EXPECT_EQ(retired_mgr->getRetiredCount(), 0u);
+
+// 8. 清理 (遵循你的测试模式)
+ThreadHeap::deallocate(slot_mgr);
+ThreadHeap::deallocate(retired_mgr);
+ThreadHeap::deallocate(st);
+
+}
+
+#include <thread>
+#include <vector>
+#include <atomic>
+#include <numeric>
+#include <algorithm>
+#include <stdexcept>
+
+// POSIX headers for multi-process support
+#include <unistd.h>     // For fork()
+#include <sys/wait.h>   // For waitpid()
+#include <pthread.h>    // For process-shared barriers
+
+// ============================================================================
+// 5) 终极压力测试：多进程 & 多线程
+// ============================================================================
+
+#include <thread>
+#include <vector>
+#include <atomic>
+#include <numeric>
+#include <algorithm>
+#include <stdexcept>
+#include <chrono> // For std::this_thread::sleep_for
+
+// POSIX headers for multi-process support
+#include <unistd.h>
+#include <sys/wait.h>
+#include <pthread.h>
+
+// (SharedStressTestBlock struct a
+// (SharedStressTestBlock struct as before)
+struct SharedStressTestBlock {
+// The stack and its managers
+SlotMgr slot_mgr;
+RetiredMgr retired_mgr;
+Stack stack;
+
+code
+Code
+download
+content_copy
+expand_less
+// Synchronization primitives
+pthread_barrier_t start_barrier;
+
+// Coordination and results
+std::atomic<int> items_to_pop_count;
+std::atomic<int> result_write_index; 
+
+// For intermediate state validation
+std::atomic<bool> observed_non_empty_stack{false};
+std::atomic<bool> observed_retired_nodes{false};
+std::atomic<uint64_t> total_collected_nodes{0};
+
+int* results_array;
+
+SharedStressTestBlock(int total_threads, int total_items)
+    : slot_mgr(),
+      retired_mgr(),
+      stack(slot_mgr, retired_mgr),
+      items_to_pop_count(total_items),
+      result_write_index(0)
+{
+    pthread_barrierattr_t attr;
+    pthread_barrierattr_init(&attr);
+    pthread_barrierattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+    pthread_barrier_init(&start_barrier, &attr, total_threads);
+    pthread_barrierattr_destroy(&attr);
+    results_array = static_cast<int*>(ThreadHeap::allocate(sizeof(int) * total_items));
+}
+
+~SharedStressTestBlock() {
+    pthread_barrier_destroy(&start_barrier);
+    ThreadHeap::deallocate(results_array);
+}
+
+};
+
+TEST_F(LockFreeStackFixture, MultiProcessMultiThread_WithIntermediateValidation) {
+// 1. 测试参数
+const int num_processes = 4;
+const int producers_per_process = 4;
+const int consumers_per_process = 4;
+// (新增) 审计线程只在父进程中运行
+const int auditors_in_parent = 1;
+const int items_per_producer = 5000;
+
+code
+Code
+download
+content_copy
+expand_less
+const int total_producers = (num_processes + 1) * producers_per_process;
+// (修改) 总线程数需要加上审计线程
+const int total_threads = total_producers + 
+                          (num_processes + 1) * consumers_per_process + 
+                          auditors_in_parent;
+const int total_items = total_producers * items_per_producer;
+
+// 2. 在共享内存中设置控制块
+SharedStressTestBlock* control_block = new (ThreadHeap::allocate(sizeof(SharedStressTestBlock)))
+    SharedStressTestBlock(total_threads, total_items);
+
+// 3. 定义工作任务
+auto worker_task = [&](int process_id, bool is_parent) {
+    std::vector<std::thread> threads;
+    int num_threads_in_proc = producers_per_process + consumers_per_process;
+    if (is_parent) num_threads_in_proc += auditors_in_parent;
+    threads.reserve(num_threads_in_proc);
+
+    // Producer task (same as before)
+    auto producer_fn = [&](int thread_id) {
+        int producer_global_id = process_id * producers_per_process + thread_id;
+        int start_value = producer_global_id * items_per_producer;
+        pthread_barrier_wait(&control_block->start_barrier);
+        for (int i = 0; i < items_per_producer; ++i) {
+            control_block->stack.push(start_value + i);
+        }
+    };
+
+    // Consumer task (same as before)
+    auto consumer_fn = [&]() {
+        int item;
+        pthread_barrier_wait(&control_block->start_barrier);
+        while (control_block->items_to_pop_count.load(std::memory_order_acquire) > 0) {
+            if (control_block->stack.tryPop(item)) {
+                int write_idx = control_block->result_write_index.fetch_add(1, std::memory_order_acq_rel);
+                if (write_idx < total_items) {
+                    control_block->results_array[write_idx] = item;
+                }
+                control_block->items_to_pop_count.fetch_sub(1, std::memory_order_acq_rel);
             }
         }
-    }
+    };
 
-    HPThreadReg(const HPThreadReg&)            = delete;
-    HPThreadReg& operator=(const HPThreadReg&) = delete;
+    // *** 新增：审计线程任务 ***
+    auto auditor_fn = [&]() {
+        pthread_barrier_wait(&control_block->start_barrier);
+        
+        while (control_block->items_to_pop_count.load(std::memory_order_acquire) > 0) {
+            // 检查栈是否非空
+            if (!control_block->stack.isEmpty()) {
+                control_block->observed_non_empty_stack.store(true, std::memory_order_relaxed);
+            }
 
-    // 设置/清空本线程的第 i 个 HP
-    inline void set(void* p, std::size_t i = 0) noexcept {
-        hp_store(hpFirstSlotIndex_ + i, p);
-    }
-    inline void clear(std::size_t i = 0) noexcept {
-        hp_store(hpFirstSlotIndex_ + i, nullptr);
-    }
+            // 检查是否有退休节点
+            if (control_block->retired_mgr.getRetiredCount() > 0) {
+                control_block->observed_retired_nodes.store(true, std::memory_order_relaxed);
+            }
 
-    // 辅助：清本线程全部 HP；读取首槽下标
-    inline void resetAll() noexcept {
-        for (std::size_t i = 0; i < hp_per_thread; ++i) {
-            hp_store(hpFirstSlotIndex_ + i, nullptr);
+            // 模拟后台GC，定期回收
+            size_t freed = control_block->stack.collectRetired(100); // 每次尝试回收100个
+            if (freed > 0) {
+                control_block->total_collected_nodes.fetch_add(freed, std::memory_order_relaxed);
+            }
+
+            // 短暂休眠，避免过度消耗CPU
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
-    }
-    inline std::size_t firstSlotIndex() const noexcept { return hpFirstSlotIndex_; }
+    };
 
-private:
-    // 本线程在全局数组中的首槽下标
-    std::size_t hpFirstSlotIndex__;
+    // Spawn threads for this process
+    for(int i = 0; i < producers_per_process; ++i) threads.emplace_back(producer_fn, i);
+    for(int i = 0; i < consumers_per_process; ++i) threads.emplace_back(consumer_fn);
+    if (is_parent) {
+        for(int i = 0; i < auditors_in_parent; ++i) threads.emplace_back(auditor_fn);
+    }
+
+    for(auto& t : threads) t.join();
 };
 
-// 线程本地上下文（首次用到时构造）
-inline thread_local HPThreadReg tls_hp;
-
-// 回收器工具：判断某指针当前是否被任意 HP 保护
-inline bool any_protects(void* target) {
-    if (!target) return false;
-    for (std::size_t i = 0; i < hp_max_slots; ++i) {
-        void* p = hp_load(i);              // acquire-load
-        if (p && p == target) return true;
-    }
-    return false;
-}
-
-
-// ============================
-//          LockFreeStack
-// ============================
-
-template <typename T>
-class LockFreeStack {
-public:
-    LockFreeStack();
-    LockFreeStack(const LockFreeStack&)            = delete;
-    LockFreeStack& operator=(const LockFreeStack&) = delete;
-    ~LockFreeStack();
-
-    void push(const T& v);
-    void push(T&& v);
-
-    // 出栈：成功写入 out 返回 true；空则 false
-    bool pop(T& out);
-
-    bool empty() const noexcept;
-
-private:
-    // 私有实现：用 CAS 把新节点安装为 top（线性化点）
-    void pushImpl_(LockFreeNode<T>* n) noexcept;
-
-private:
-    alignas(64) LockFreeNode<T>*         top_{nullptr};          // 栈顶指针
-    alignas(64) LockFreeRetiredList<T>*  retiredList_{nullptr};  // 退休链（延迟回收）
-};
-
-
-// --------- 实现 ---------
-
-template <typename T>
-LockFreeStack<T>::LockFreeStack()
-    : top_(nullptr),
-      retiredList_(new LockFreeRetiredList<T>())
-{}
-
-template <typename T>
-LockFreeStack<T>::~LockFreeStack() {
-    // 1) 清空工作栈（假设已无并发访问）
-    LockFreeNode<T>* p = load_acquire_ptr(&top_);
-    while (p) {
-        LockFreeNode<T>* q = p->next;
-        delete p;
-        p = q;
-    }
-    store_release_ptr(&top_, nullptr);
-
-    // 2) 清空退休链
-    if (retiredList_) {
-        retiredList_->clear();
-        delete retiredList_;
-        retiredList_ = nullptr;
+// 4. 创建子进程
+std::vector<pid_t> child_pids;
+for (int i = 0; i < num_processes; ++i) {
+    pid_t pid = fork();
+    if (pid == -1) {
+        FAIL() << "Failed to fork process";
+    } else if (pid == 0) { // Child process
+        worker_task(i + 1, false); // is_parent = false
+        exit(0);
+    } else { // Parent process
+        child_pids.push_back(pid);
     }
 }
 
-template <typename T>
-void LockFreeStack<T>::push(const T& v) {
-    auto* n = new LockFreeNode<T>(v);
-    pushImpl_(n);
+// 5. 父进程也参与工作 (并启动审计线程)
+worker_task(0, true); // is_parent = true
+
+// 6. 等待所有子进程结束 (same as before)
+for (pid_t pid : child_pids) {
+    int status;
+    ASSERT_NE(waitpid(pid, &status, 0), -1);
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0) << "Child process crashed or exited with an error.";
 }
 
-template <typename T>
-void LockFreeStack<T>::push(T&& v) {
-    auto* n = new LockFreeNode<T>(std::move(v));
-    pushImpl_(n);
+// --- 7. 验证结果 ---
+std::cout << "\n[StressTest] All processes and threads finished. Starting validation." << std::endl;
+
+// *** 新增：验证中间状态 ***
+EXPECT_TRUE(control_block->observed_non_empty_stack.load())
+    << "Auditor thread never observed a non-empty stack, which is highly unlikely.";
+EXPECT_TRUE(control_block->observed_retired_nodes.load())
+    << "Auditor thread never observed any retired nodes.";
+
+// 7.1 验证最终状态 (same as before)
+EXPECT_EQ(control_block->items_to_pop_count.load(), 0);
+EXPECT_TRUE(control_block->stack.isEmpty());
+ASSERT_EQ(control_block->result_write_index.load(), total_items);
+
+// 7.2 验证数据完整性 (same as before)
+std::vector<int> all_popped_items(control_block->results_array, control_block->results_array + total_items);
+std::vector<int> expected_items(total_items);
+std::iota(expected_items.begin(), expected_items.end(), 0);
+std::sort(all_popped_items.begin(), all_popped_items.end());
+EXPECT_EQ(all_popped_items, expected_items);
+
+// 7.3 验证内存回收 (逻辑稍作调整)
+// 计算剩余未回收的节点
+uint64_t collected_during_run = control_block->total_collected_nodes.load();
+uint64_t remaining_to_collect = total_items - collected_during_run;
+
+EXPECT_EQ(control_block->retired_mgr.getRetiredCount(), remaining_to_collect);
+
+// 进行最终的回收
+std::size_t final_freed = control_block->stack.drainAll(); // 使用 drain_all 更彻底
+EXPECT_EQ(final_freed, remaining_to_collect);
+EXPECT_EQ(control_block->retired_mgr.getRetiredCount(), 0u);
+
+// 8. 清理 (same as before)
+control_block->~SharedStressTestBlock();
+ThreadHeap::deallocate(control_block);
+
 }
 
-// Treiber push：不需要 HP
-template <typename T>
-void LockFreeStack<T>::pushImpl_(LockFreeNode<T>* n) noexcept {
-    LockFreeNode<T>* old = load_acquire_ptr(&top_);
-    do {
-        n->next = old;
-        // 自旋直到 CAS 成功
-    } while (!cas_acq_rel_ptr(&top_, old, n));
+// ============================================================================
+// 6) 单进程多线程：验证线程退出时的自动清理
+// ============================================================================
+TEST_F(LockFreeStackFixture, SingleProcess_ThreadExitCleanupVerification) {
+// 1. 设置
+std::cout << "\n[CleanupTest] Setting up HpSlotManager on ThreadHeap..." << std::endl;
+// 我们只需要一个 SlotMgr 来测试，不需要完整的栈
+SlotMgr* slot_mgr = new (ThreadHeap::allocate(sizeof(SlotMgr))) SlotMgr();
+
+code
+Code
+download
+content_copy
+expand_less
+const int num_threads = 4;
+std::vector<std::thread> threads;
+
+std::cout << "[CleanupTest] Starting " << num_threads << " worker threads..." << std::endl;
+
+// 2. 创建并启动线程
+for (int i = 0; i < num_threads; ++i) {
+    threads.emplace_back([slot_mgr]() {
+        // 获取当前线程的 ID 用于日志记录
+        auto thread_id = std::this_thread::get_id();
+        std::cout << "[Thread " << thread_id << "] Started." << std::endl;
+
+        // *** 关键操作 ***
+        // 每个线程必须至少调用一次 acquireTls() 来获取槽位。
+        // 这个调用会设置好 tls_slot_ 和退出时的清理回调。
+        HpSlot<node_t>* slot = slot_mgr->acquireTls();
+        std::cout << "[Thread " << thread_id << "] Acquired slot: " << slot << std::endl;
+        ASSERT_NE(slot, nullptr);
+
+        // 模拟一些短暂的工作
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+        // 当这个 lambda 函数返回时，线程的生命周期结束。
+        // 我们期望它的 thread_local 变量会被销毁，从而触发 unregisterTls_()。
+        std::cout << "[Thread " << thread_id << "] Exiting now. Cleanup should occur automatically." << std::endl;
+    });
 }
 
-template <typename T>
-bool LockFreeStack<T>::empty() const noexcept {
-    return load_acquire_ptr(&top_) == nullptr;
+// 3. 等待所有线程完成
+std::cout << "[CleanupTest] Main thread waiting for all worker threads to join..." << std::endl;
+for (auto& t : threads) {
+    t.join();
 }
 
-// Treiber pop（带 HP 保护）
-template <typename T>
-bool LockFreeStack<T>::pop(T& out) {
-    while (true) {
-        // 1) 快照 top
-        LockFreeNode<T>* old = load_acquire_ptr(&top_);
-        if (!old) return false; // 空
+std::cout << "[CleanupTest] All threads have joined. Verification complete." << std::endl;
 
-        // 2) 设置 HP 保护 old（release-store）
-        tls_hp.set(static_cast<void*>(old));
+// 4. 清理
+// 对于 placement new 创建的对象，需要显式调用析构函数
+slot_mgr->~SlotMgr();
+ThreadHeap::deallocate(slot_mgr);
 
-        // 3) 确认 top 未变（把 HP 与当前拓扑“对齐”）
-        if (load_acquire_ptr(&top_) != old) {
-            tls_hp.clear();
-            continue; // 竞争失败，重试
-        }
-
-        // 4) 现在可以安全解引用 old->next（old 不会被回收/复用）
-        LockFreeNode<T>* next = old->next;
-
-        // 5) CAS 试图弹出
-        if (cas_acq_rel_ptr(&top_, old, next)) {
-            // 线性化点：成功出栈
-            out = std::move(old->value);
-
-            // 6) 清 HP（从此刻开始，回收器可能会释放 old）
-            tls_hp.clear();
-
-            // 7) 放入退休链，延迟回收（回收器内部用 any_protects 扫描 hp_slots）
-            retiredList_->push(old);
-
-            // （可选）也可在此主动触发一次扫描：
-            // retiredList_->tryScanAndReclaim([](void* p){ return any_protects(p); });
-
-            return true;
-        }
-
-        // CAS 失败，清 HP，重试
-        tls_hp.clear();
-        // 可在此放置 pause/backoff
-    }
 }

@@ -1,13 +1,13 @@
 # 主要的测试可执行文件
 add_executable(run_tests
-    CentralHeap_gtest.cpp
+    # CentralHeap_gtest.cpp
     # CentralHeap_mproc_test.cpp
     # TheadHeap_SmallBlocks_mproc_2proc2th.cpp
     # HpSlotManager_test.cpp
     # HpRetiredManager_test.cpp
     # ShmMutexLock_gtest.cpp
     # CentralHeap_mproc_stress.cpp
-    # LockFreeStack_test.cpp
+    LockFreeStack_test.cpp
 )
 
 # 链接所需的库

@@ -4,6 +4,12 @@
 #include <cassert>
 #include <unordered_set>
 
+template <class Node, class AllocPolicy>
+HpRetiredManager<Node, AllocPolicy>::HpRetiredManager() noexcept = default;
+
+template <class Node, class AllocPolicy>
+HpRetiredManager<Node, AllocPolicy>::~HpRetiredManager() noexcept = default;
+
 
 template <class Node, class AllocPolicy>
 void HpRetiredManager<Node, AllocPolicy>::appendRetiredNode(Node* n) noexcept {
