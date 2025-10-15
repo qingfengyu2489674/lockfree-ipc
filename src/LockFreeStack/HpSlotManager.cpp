@@ -21,6 +21,19 @@ void thDelete(T* p) noexcept {
 }
 } // namespace
 
+
+namespace HazardPointerDetail {
+    // 定义一个线程本地的回调函数指针
+    inline thread_local void (*g_thread_exit_callback)() = nullptr;
+    
+    // Handler 的析构函数现在调用这个回调
+    ThreadExitHandler::~ThreadExitHandler() {
+        if (g_thread_exit_callback) {
+            g_thread_exit_callback();
+        }
+    }
+}
+
 // ====================== 模板成员实现 ======================
 
 template <class Node>
@@ -43,6 +56,9 @@ template <class Node>
 HpSlot<Node>* HpSlotManager<Node>::acquireTls() {
     if (tls_slot_ != nullptr) return tls_slot_;
 
+    tls_manager_ = this;
+    HazardPointerDetail::g_thread_exit_callback = &HpSlotManager<Node>::onThreadExit;
+
     // 用 ThreadHeap 分配并构造
     auto* slot = thNew<HpSlot<Node>>();
     auto* node = thNew<typename HpSlotManager<Node>::SlotNode>();
@@ -58,26 +74,17 @@ HpSlot<Node>* HpSlotManager<Node>::acquireTls() {
     return tls_slot_;
 }
 
-// template <class Node>
-// HpSlot<Node>* HpSlotManager<Node>::acquireTls() {
-//     if (tls_slot_) return tls_slot_;
-//     static thread_local HpSlot<Node>*  tls_slot  = nullptr;
-//     static thread_local SlotNode*      tls_node  = nullptr;
+template <class Node>
+void HpSlotManager<Node>::onThreadExit() {
+    if (tls_manager_) {
+        tls_manager_->unregisterTls_();
+    }
+}
 
-//     tls_slot = new HpSlot<Node>();            // 系统堆；不要 ThreadHeap
-//     tls_node = new SlotNode{tls_slot, nullptr};
 
-//     SlotNode* old = head_.load(std::memory_order_relaxed);
-//     do { tls_node->next = old; }
-//     while(!head_.compare_exchange_weak(
-//             old, tls_node,
-//             std::memory_order_release,
-//             std::memory_order_relaxed));
-//     return tls_slot;
-// }
 
 template <class Node>
-void HpSlotManager<Node>::unregisterTls() {
+void HpSlotManager<Node>::unregisterTls_() {
     HpSlot<Node>* s = tls_slot_;
     if (!s) return;
 
@@ -161,7 +168,7 @@ std::size_t HpSlotManager<Node>::flushAllRetiredTo(std::atomic<Node*>& dst_head)
 
 
 template <class Node>
-void HpSlotManager<Node>::retire(Node* n) noexcept {
+void HpSlotManager<Node>::retireNode(Node* n) noexcept {
     if (!n) return;
     HpSlot<Node>* s = acquireTls();   // 确保拿到本线程的槽位
     s->pushRetired(n);                // CAS 头插到 retired_head

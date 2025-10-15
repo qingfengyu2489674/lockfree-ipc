@@ -7,7 +7,7 @@
 template <class T>
 class StackNode {
 public:
-    StackNode* next{nullptr};               // 这里实现为普通指针即可，没必要为原子
+    StackNode* next{nullptr};          // 这里实现为普通指针即可，没必要为原子
     T value;                           // 存储的值
 
     // 构造：支持默认、拷贝、移动

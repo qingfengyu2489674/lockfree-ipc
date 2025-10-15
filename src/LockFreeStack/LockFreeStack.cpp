@@ -67,7 +67,7 @@ void LockFreeStack<T>::push(value_type&& v) noexcept {
 
 
 template <class T>
-bool LockFreeStack<T>::try_pop(value_type& out) noexcept {
+bool LockFreeStack<T>::tryPop(value_type& out) noexcept {
     for (;;) {
         node_type* h = head_.load(std::memory_order_acquire);
         if (!h) {
@@ -92,7 +92,7 @@ bool LockFreeStack<T>::try_pop(value_type& out) noexcept {
                 std::memory_order_relaxed)) {  // 失败：h 已被更新
             out = std::move(h->value);
             if (slot) slot->clear();
-            retired_mgr_.appendRetiredNodeToList(h);
+            retired_mgr_.appendRetiredNode(h);
             return true;
         }
 
@@ -104,25 +104,25 @@ bool LockFreeStack<T>::try_pop(value_type& out) noexcept {
 
 // ====================== empty（用 acquire） ======================
 template <class T>
-bool LockFreeStack<T>::empty() const noexcept {
+bool LockFreeStack<T>::isEmpty() const noexcept {
     return head_.load(std::memory_order_acquire) == nullptr;
 }
 
 // ----- retire helpers -----
 template <class T>
-void LockFreeStack<T>::retire_node(node_type* n) noexcept {
-    slot_mgr_.retire(n);
+void LockFreeStack<T>::retireNode(node_type* n) noexcept {
+    slot_mgr_.retireNode(n);
 }
 
 template <class T>
-void LockFreeStack<T>::retire_list(node_type* head) noexcept {
+void LockFreeStack<T>::retireList(node_type* head) noexcept {
     slot_mgr_.retireList(head);
 }
 
 // ----- 顶层回收：先汇总 per-slot 退休链，再拍快照 + collect -----
 template <class T>
 typename LockFreeStack<T>::size_type
-LockFreeStack<T>::collect(size_type quota) noexcept {
+LockFreeStack<T>::collectRetired(size_type quota) noexcept {
     if (quota == 0) return 0;
 
     // 1) 汇总：把所有 HpSlot 的本地退休链并入一个临时原子头
@@ -131,7 +131,7 @@ LockFreeStack<T>::collect(size_type quota) noexcept {
 
     // 2) 将聚合链整段并入 RetiredManager 的全局退休链（内部加锁，线程安全）
     if (node_type* seg = agg_head.exchange(nullptr, std::memory_order_acq_rel)) {
-        retired_mgr_.appendRetiredListToList(seg);
+        retired_mgr_.appendRetiredList(seg);
     }
 
     // 3) 拍 Hazard 快照
@@ -140,12 +140,12 @@ LockFreeStack<T>::collect(size_type quota) noexcept {
     slot_mgr_.snapshotHazardpoints(snapshot);
 
     // 4) 回收（仍然走你已有的匿名回收器与 collect_from_snapshot_）
-    return collect_from_snapshot_(quota, snapshot);
+    return collectFromSnapshot_(quota, snapshot);
 }
 
 template <class T>
 typename LockFreeStack<T>::size_type
-LockFreeStack<T>::collect_from_snapshot_(size_type quota,
+LockFreeStack<T>::collectFromSnapshot_(size_type quota,
                                          std::vector<const node_type*>& snapshot) noexcept {
     // .cpp 内匿名回收器（函数指针签名：Node*，noexcept）
     auto reclaimer = +[](node_type* p) noexcept {
@@ -154,13 +154,13 @@ LockFreeStack<T>::collect_from_snapshot_(size_type quota,
         ThreadHeap::deallocate(p); // 线程堆释放
     };
 
-    return static_cast<size_type>(retired_mgr_.collect(quota, snapshot, reclaimer));
+    return static_cast<size_type>(retired_mgr_.collectRetired(quota, snapshot, reclaimer));
 }
 
 // ----- 停机/析构：全量回收（匿名回收器：线程堆释放） -----
 template <class T>
 typename LockFreeStack<T>::size_type
-LockFreeStack<T>::drain_all() noexcept {
+LockFreeStack<T>::drainAll() noexcept {
     auto reclaimer = +[](node_type* p) noexcept {
         if (!p) return;
         p->~node_type();
@@ -168,49 +168,6 @@ LockFreeStack<T>::drain_all() noexcept {
     };
     return static_cast<size_type>(retired_mgr_.drainAll(reclaimer));
 }
-
-
-// #include <sstream>
-
-// // ----- debug_dump_top_to_bottom -----
-// template <class T>
-// std::vector<typename LockFreeStack<T>::value_type>
-// LockFreeStack<T>::debug_dump_top_to_bottom() const noexcept {
-//     std::lock_guard<std::mutex> g(dbg_mtx_);
-
-//     std::vector<value_type> out;
-//     // 为了观察到“已发布”的节点，这里用 acquire 读 head
-//     node_type* p = head_.load(std::memory_order_acquire);
-
-//     // 防御性保护，避免循环损坏导致的死循环
-//     constexpr std::size_t kHardLimit = 1'000'000;
-//     std::size_t guard = 0;
-
-//     while (p && guard++ < kHardLimit) {
-//         // 这里假设 StackNode<T> 里是：
-//         //   T value;
-//         //   node_type* next;   // 非原子（Treiber 常见写法）
-//         //
-//         // 若你的 next 是 atomic<node_type*>，把下面一行改为：
-//         //   p = p->next.load(std::memory_order_acquire);
-//         out.push_back(p->value);
-//         p = p->next;
-//     }
-//     return out;
-// }
-
-// // ----- debug_to_string -----
-// template <class T>
-// std::string LockFreeStack<T>::debug_to_string() const {
-//     auto vals = debug_dump_top_to_bottom();
-//     std::ostringstream oss;
-//     oss << "top";
-//     for (const auto& v : vals) {
-//         oss << " -> " << v;
-//     }
-//     oss << " -> null";
-//     return oss.str();
-// }
 
 
 // ====================== 显式实例化 ======================

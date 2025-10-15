@@ -13,7 +13,7 @@ template <class Node>
 HpRetiredManager<Node>::~HpRetiredManager() noexcept = default;
 
 template <class Node>
-void HpRetiredManager<Node>::appendRetiredNodeToList(Node* n) noexcept {
+void HpRetiredManager<Node>::appendRetiredNode(Node* n) noexcept {
     if (!n) return;
     std::lock_guard<ShmMutexLock> g(lock_);
     // 单节点头插：n -> global_head_
@@ -23,14 +23,14 @@ void HpRetiredManager<Node>::appendRetiredNodeToList(Node* n) noexcept {
 }
 
 template <class Node>
-void HpRetiredManager<Node>::appendRetiredListToList(Node* head) noexcept {
+void HpRetiredManager<Node>::appendRetiredList(Node* head) noexcept {
     if (!head) return;
     std::lock_guard<ShmMutexLock> g(lock_);
     (void)appendListLocked_(head);
 }
 
 template <class Node>
-std::size_t HpRetiredManager<Node>::collect(std::size_t                 quota,
+std::size_t HpRetiredManager<Node>::collectRetired(std::size_t                 quota,
                                             std::vector<const Node*>&   hazard_snapshot,
                                             Reclaimer                   reclaimer) noexcept
 {
@@ -152,28 +152,6 @@ std::size_t HpRetiredManager<Node>::scanAndReclaimUpLocked_(
     return freed;
 }
 
-// template <class Node>
-// std::size_t HpRetiredManager<Node>::drainAllLocked_(Reclaimer reclaimer) noexcept {
-//     if (!global_head_) return 0;
-
-//     // 取走整段
-//     Node* head = global_head_;
-//     global_head_ = nullptr;
-
-//     // 统计并释放
-//     std::size_t freed = 0;
-//     while (head) {
-//         Node* nxt = head->next;
-//         reclaimer(head);
-//         head = nxt;
-//         ++freed;
-//     }
-
-//     if (freed != 0) {
-//         approx_count_.fetch_sub(freed, std::memory_order_relaxed);
-//     }
-//     return freed;
-// }
 
 // ======== 显式实例化（可按需添加/删除） ========
 // 若此 cpp 被多个 Node 类型共用且以头文件形式包含，则可移除这些实例化，

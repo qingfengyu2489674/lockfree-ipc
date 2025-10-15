@@ -33,14 +33,14 @@ class HpRetiredManagerFixture : public ThreadHeapTestFixture {};
 // ============================================================================
 TEST_F(HpRetiredManagerFixture, AppendSingleNodes_Then_CollectAll) {
     RetiredMgr mgr;
-    mgr.appendRetiredNodeToList(new TestNode(1));
-    mgr.appendRetiredNodeToList(new TestNode(2));
-    mgr.appendRetiredNodeToList(new TestNode(3));
+    mgr.appendRetiredNode(new TestNode(1));
+    mgr.appendRetiredNode(new TestNode(2));
+    mgr.appendRetiredNode(new TestNode(3));
 
     EXPECT_EQ(mgr.getRetiredCount(), 3u);
 
     std::vector<const TestNode*> none;  // 空 hazard
-    std::size_t freed = mgr.collect(/*quota*/ 1000, none, &reclaim_delete);
+    std::size_t freed = mgr.collectRetired(/*quota*/ 1000, none, &reclaim_delete);
     EXPECT_EQ(freed, 3u);
     EXPECT_EQ(mgr.getRetiredCount(), 0u);
 }
@@ -51,15 +51,15 @@ TEST_F(HpRetiredManagerFixture, AppendSingleNodes_Then_CollectAll) {
 TEST_F(HpRetiredManagerFixture, AppendList_Then_CollectWithQuota) {
     RetiredMgr mgr;
     TestNode* head = build_list_lifo({1,2,3,4,5});   // 5->4->3->2->1
-    mgr.appendRetiredListToList(head);
+    mgr.appendRetiredList(head);
     EXPECT_EQ(mgr.getRetiredCount(), 5u);
 
     std::vector<const TestNode*> none;
-    std::size_t freed = mgr.collect(/*quota*/ 2, none, &reclaim_delete);
+    std::size_t freed = mgr.collectRetired(/*quota*/ 2, none, &reclaim_delete);
     EXPECT_EQ(freed, 2u);
     EXPECT_EQ(mgr.getRetiredCount(), 3u);
 
-    freed = mgr.collect(/*quota*/ 1000, none, &reclaim_delete);
+    freed = mgr.collectRetired(/*quota*/ 1000, none, &reclaim_delete);
     EXPECT_EQ(freed, 3u);
     EXPECT_EQ(mgr.getRetiredCount(), 0u);
 }
@@ -75,21 +75,21 @@ TEST_F(HpRetiredManagerFixture, HazardProtected_DeferThenCollect) {
     for (TestNode* p = list; p; p = p->next) if (p->value == 3) { protected_node = p; break; }
     ASSERT_NE(protected_node, nullptr);
 
-    mgr.appendRetiredListToList(list);
+    mgr.appendRetiredList(list);
     EXPECT_EQ(mgr.getRetiredCount(), 5u);
 
     std::unordered_set<const TestNode*> hz{protected_node};
     auto snap = snapshot_from_set(hz);
 
     // 第一次：应保留受保护的 1 个，其余都回收
-    std::size_t freed = mgr.collect(/*quota*/ 1000, snap, &reclaim_delete);
+    std::size_t freed = mgr.collectRetired(/*quota*/ 1000, snap, &reclaim_delete);
     EXPECT_EQ(freed, 4u);
     EXPECT_EQ(mgr.getRetiredCount(), 1u);
 
     // 取消保护
     hz.clear();
     std::vector<const TestNode*> none;
-    freed = mgr.collect(/*quota*/ 1000, none, &reclaim_delete);
+    freed = mgr.collectRetired(/*quota*/ 1000, none, &reclaim_delete);
     EXPECT_EQ(freed, 1u);
     EXPECT_EQ(mgr.getRetiredCount(), 0u);
 }
@@ -99,7 +99,7 @@ TEST_F(HpRetiredManagerFixture, HazardProtected_DeferThenCollect) {
 // ============================================================================
 TEST_F(HpRetiredManagerFixture, DrainAll_ReclaimEverything) {
     RetiredMgr mgr;
-    for (int i = 0; i < 8; ++i) mgr.appendRetiredNodeToList(new TestNode(i));
+    for (int i = 0; i < 8; ++i) mgr.appendRetiredNode(new TestNode(i));
     EXPECT_EQ(mgr.getRetiredCount(), 8u);
 
     std::size_t freed = mgr.drainAll(&reclaim_delete);
@@ -122,9 +122,9 @@ TEST_F(HpRetiredManagerFixture, MultiThreads_SmokeAppend_ThenCollectAll) {
         ths.emplace_back([&mgr, t] {
             // 整段并入
             TestNode* head = build_list_lifo({t*10+1, t*10+2, t*10+3, t*10+4});
-            mgr.appendRetiredListToList(head);
+            mgr.appendRetiredList(head);
             // 再并入若干单节点
-            for (int i = 0; i < kPerThreadNodes - 4; ++i) mgr.appendRetiredNodeToList(new TestNode(-(t*100+i)));
+            for (int i = 0; i < kPerThreadNodes - 4; ++i) mgr.appendRetiredNode(new TestNode(-(t*100+i)));
         });
     }
     for (auto& th : ths) th.join();
@@ -136,7 +136,7 @@ TEST_F(HpRetiredManagerFixture, MultiThreads_SmokeAppend_ThenCollectAll) {
     std::size_t total = 0;
     // 分批收割，避免一次配额过小卡住
     while (mgr.getRetiredCount() > 0) {
-        total += mgr.collect(/*quota*/ 256, none, &reclaim_delete);
+        total += mgr.collectRetired(/*quota*/ 256, none, &reclaim_delete);
     }
     EXPECT_EQ(total, expect);
     EXPECT_EQ(mgr.getRetiredCount(), 0u);

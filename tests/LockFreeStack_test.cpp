@@ -32,9 +32,9 @@ TEST_F(LockFreeStackFixture, EmptyStack_TryPopFalse) {
     std::cout << "\n[EmptyStack] init: " << "[Not Outputting debug_to_string()]" << std::endl;
 
     int out = 0;
-    EXPECT_TRUE(st->empty());
-    EXPECT_FALSE(st->try_pop(out));
-    EXPECT_TRUE(st->empty());
+    EXPECT_TRUE(st->isEmpty());
+    EXPECT_FALSE(st->tryPop(out));
+    EXPECT_TRUE(st->isEmpty());
     EXPECT_EQ(retired_mgr->getRetiredCount(), 0u);
 
     std::cout << "[EmptyStack] final: " << "[Not Outputting debug_to_string()]" << std::endl;
@@ -61,15 +61,15 @@ TEST_F(LockFreeStackFixture, PushThenPop_LIFOOrder) {
 
     int out = 0;
     for (int expect = 5; expect >= 1; --expect) {
-        ASSERT_TRUE(st->try_pop(out));
+        ASSERT_TRUE(st->tryPop(out));
         EXPECT_EQ(out, expect);
     }
 
-    EXPECT_TRUE(st->empty());
+    EXPECT_TRUE(st->isEmpty());
     std::cout << "[LIFO] after pop all: " << "[Not Outputting debug_to_string()]" << std::endl;
 
     EXPECT_EQ(retired_mgr->getRetiredCount(), 5u);
-    std::size_t freed = st->collect(1000);
+    std::size_t freed = st->collectRetired(1000);
     EXPECT_EQ(freed, 5u);
     EXPECT_EQ(retired_mgr->getRetiredCount(), 0u);
 
@@ -94,11 +94,11 @@ TEST_F(LockFreeStackFixture, DrainAll_ForceCollectEverything) {
     std::cout << "\n[DrainAll] after push 3: " << "[Not Outputting debug_to_string()]" << std::endl;
 
     int out = 0;
-    for (int i = 0; i < 3; ++i) ASSERT_TRUE(st->try_pop(out));
-    EXPECT_TRUE(st->empty());
+    for (int i = 0; i < 3; ++i) ASSERT_TRUE(st->tryPop(out));
+    EXPECT_TRUE(st->isEmpty());
     EXPECT_EQ(retired_mgr->getRetiredCount(), 3u);
 
-    std::size_t freed = st->drain_all();
+    std::size_t freed = st->drainAll();
     EXPECT_EQ(freed, 3u);
     EXPECT_EQ(retired_mgr->getRetiredCount(), 0u);
 
@@ -153,12 +153,12 @@ TEST_F(LockFreeStackFixture, ConcurrentPushPop_NoDataLossOrCorruption) {
 
         // 只要还有物品需要被弹出，就继续尝试
         while (items_remaining_to_pop.load(std::memory_order_acquire) > 0) {
-            if (st->try_pop(item)) {
+            if (st->tryPop(item)) {
                 local_popped_items.push_back(item);
                 // 只有在成功弹出一个物品后，才减少总计数器
                 items_remaining_to_pop.fetch_sub(1, std::memory_order_acq_rel);
             }
-            // 如果 try_pop 返回 false (栈暂时为空)，则循环继续，不做任何操作
+            // 如果 pop 返回 false (栈暂时为空)，则循环继续，不做任何操作
         }
     };
 
@@ -189,7 +189,7 @@ TEST_F(LockFreeStackFixture, ConcurrentPushPop_NoDataLossOrCorruption) {
     
     // 6.1 验证最终状态：计数器归零，栈为空
     EXPECT_EQ(items_remaining_to_pop.load(), 0);
-    EXPECT_TRUE(st->empty());
+    EXPECT_TRUE(st->isEmpty());
 
     // 6.2 将所有消费者弹出的数据汇总到一个 vector 中
     std::vector<int> all_popped_items;
@@ -211,7 +211,7 @@ TEST_F(LockFreeStackFixture, ConcurrentPushPop_NoDataLossOrCorruption) {
     
     // 7. 验证内存回收机制
     EXPECT_EQ(retired_mgr->getRetiredCount(), (unsigned)total_items);
-    std::size_t freed = st->collect(total_items * 2); // 使用一个足够大的配额
+    std::size_t freed = st->collectRetired(total_items * 2); // 使用一个足够大的配额
     EXPECT_EQ(freed, (unsigned)total_items);
     EXPECT_EQ(retired_mgr->getRetiredCount(), 0u);
 
@@ -338,7 +338,7 @@ TEST_F(LockFreeStackFixture, MultiProcessMultiThread_WithIntermediateValidation)
             int item;
             pthread_barrier_wait(&control_block->start_barrier);
             while (control_block->items_to_pop_count.load(std::memory_order_acquire) > 0) {
-                if (control_block->stack.try_pop(item)) {
+                if (control_block->stack.tryPop(item)) {
                     int write_idx = control_block->result_write_index.fetch_add(1, std::memory_order_acq_rel);
                     if (write_idx < total_items) {
                         control_block->results_array[write_idx] = item;
@@ -354,7 +354,7 @@ TEST_F(LockFreeStackFixture, MultiProcessMultiThread_WithIntermediateValidation)
             
             while (control_block->items_to_pop_count.load(std::memory_order_acquire) > 0) {
                 // 检查栈是否非空
-                if (!control_block->stack.empty()) {
+                if (!control_block->stack.isEmpty()) {
                     control_block->observed_non_empty_stack.store(true, std::memory_order_relaxed);
                 }
 
@@ -364,7 +364,7 @@ TEST_F(LockFreeStackFixture, MultiProcessMultiThread_WithIntermediateValidation)
                 }
 
                 // 模拟后台GC，定期回收
-                size_t freed = control_block->stack.collect(100); // 每次尝试回收100个
+                size_t freed = control_block->stack.collectRetired(100); // 每次尝试回收100个
                 if (freed > 0) {
                     control_block->total_collected_nodes.fetch_add(freed, std::memory_order_relaxed);
                 }
@@ -419,7 +419,7 @@ TEST_F(LockFreeStackFixture, MultiProcessMultiThread_WithIntermediateValidation)
     
     // 7.1 验证最终状态 (same as before)
     EXPECT_EQ(control_block->items_to_pop_count.load(), 0);
-    EXPECT_TRUE(control_block->stack.empty());
+    EXPECT_TRUE(control_block->stack.isEmpty());
     ASSERT_EQ(control_block->result_write_index.load(), total_items);
 
     // 7.2 验证数据完整性 (same as before)
@@ -437,7 +437,7 @@ TEST_F(LockFreeStackFixture, MultiProcessMultiThread_WithIntermediateValidation)
     EXPECT_EQ(control_block->retired_mgr.getRetiredCount(), remaining_to_collect);
     
     // 进行最终的回收
-    std::size_t final_freed = control_block->stack.drain_all(); // 使用 drain_all 更彻底
+    std::size_t final_freed = control_block->stack.drainAll(); // 使用 drain_all 更彻底
     EXPECT_EQ(final_freed, remaining_to_collect);
     EXPECT_EQ(control_block->retired_mgr.getRetiredCount(), 0u);
 
