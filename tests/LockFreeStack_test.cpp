@@ -445,3 +445,55 @@ TEST_F(LockFreeStackFixture, MultiProcessMultiThread_WithIntermediateValidation)
     control_block->~SharedStressTestBlock();
     ThreadHeap::deallocate(control_block);
 }
+
+
+// ============================================================================
+// 6) 单进程多线程：验证线程退出时的自动清理
+// ============================================================================
+TEST_F(LockFreeStackFixture, SingleProcess_ThreadExitCleanupVerification) {
+    // 1. 设置
+    std::cout << "\n[CleanupTest] Setting up HpSlotManager on ThreadHeap..." << std::endl;
+    // 我们只需要一个 SlotMgr 来测试，不需要完整的栈
+    SlotMgr* slot_mgr = new (ThreadHeap::allocate(sizeof(SlotMgr))) SlotMgr();
+
+    const int num_threads = 4;
+    std::vector<std::thread> threads;
+
+    std::cout << "[CleanupTest] Starting " << num_threads << " worker threads..." << std::endl;
+
+    // 2. 创建并启动线程
+    for (int i = 0; i < num_threads; ++i) {
+        threads.emplace_back([slot_mgr]() {
+            // 获取当前线程的 ID 用于日志记录
+            auto thread_id = std::this_thread::get_id();
+            std::cout << "[Thread " << thread_id << "] Started." << std::endl;
+
+            // *** 关键操作 ***
+            // 每个线程必须至少调用一次 acquireTls() 来获取槽位。
+            // 这个调用会设置好 tls_slot_ 和退出时的清理回调。
+            HpSlot<node_t>* slot = slot_mgr->acquireTls();
+            std::cout << "[Thread " << thread_id << "] Acquired slot: " << slot << std::endl;
+            ASSERT_NE(slot, nullptr);
+
+            // 模拟一些短暂的工作
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+            // 当这个 lambda 函数返回时，线程的生命周期结束。
+            // 我们期望它的 thread_local 变量会被销毁，从而触发 unregisterTls_()。
+            std::cout << "[Thread " << thread_id << "] Exiting now. Cleanup should occur automatically." << std::endl;
+        });
+    }
+
+    // 3. 等待所有线程完成
+    std::cout << "[CleanupTest] Main thread waiting for all worker threads to join..." << std::endl;
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    std::cout << "[CleanupTest] All threads have joined. Verification complete." << std::endl;
+    
+    // 4. 清理
+    // 对于 placement new 创建的对象，需要显式调用析构函数
+    slot_mgr->~SlotMgr();
+    ThreadHeap::deallocate(slot_mgr);
+}

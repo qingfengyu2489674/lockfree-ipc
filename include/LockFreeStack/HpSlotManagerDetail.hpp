@@ -1,19 +1,25 @@
 #pragma once
 #include "LockFreeStack/HpSlot.hpp"
+#include <functional>
 
 namespace HazardPointerDetail {
 
-template <class Node>
+template<class Node, std::size_t MaxPointers>
 struct SlotNode
 {
-    HpSlot<Node>* slot{nullptr};  // 槽位指针
+    HpSlot<Node, MaxPointers>* slot{nullptr};  // 槽位指针
     SlotNode*     next{nullptr};  // 单链表 next
 };
 
 class ThreadExitHandler {
 public:
-    // 析构函数调用一个静态清理函数
-    ~ThreadExitHandler();
+    ~ThreadExitHandler() {
+        if (on_exit) {
+            on_exit();
+        }
+    }
+    
+    // 公开的回调成员
+    std::function<void()> on_exit;
 };
-
 }

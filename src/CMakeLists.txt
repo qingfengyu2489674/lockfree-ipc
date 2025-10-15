@@ -20,10 +20,6 @@ add_library(mylib STATIC
     gc_malloc/ThreadHeap/ProcessAllocatorContext.cpp
 
     Tool/ShmMutexLock.cpp
-
-    LockFreeStack/HpSlot.cpp
-    LockFreeStack/HpSlotManager.cpp
-    LockFreeStack/HpRetiredManager.cpp
     LockFreeStack/LockFreeStack.cpp
 
 

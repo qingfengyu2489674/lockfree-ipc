@@ -7,8 +7,12 @@
 #include <vector>
 
 #include "Tool/ShmMutexLock.hpp"
+#include "AllocatorPolicies.hpp"
 
-template <class Node>
+template <
+    class Node, 
+    class AllocPolicy = DefaultHeapPolicy
+>
 class HpRetiredManager {
 public:
     using Reclaimer       = void(*)(Node*) noexcept;
@@ -25,17 +29,15 @@ public:
 
                         
     std::size_t collectRetired(std::size_t                 quota,
-                                std::vector<const Node*>&   hazard_snapshot,
-                                Reclaimer                   reclaimer) noexcept;
+                               const std::vector<const Node*>&   hazard_snapshot) noexcept;
 
-    std::size_t drainAll(Reclaimer reclaimer) noexcept;
+    std::size_t drainAll() noexcept;
     std::size_t getRetiredCount() const noexcept;
 
 private:
     std::size_t appendListLocked_(Node* head) noexcept;
-    std::size_t scanAndReclaimUpLocked_(std::size_t      quota,
-                                        std::vector<const Node*>& hazard_snapshot,
-                                        Reclaimer        reclaimer) noexcept;
+    std::size_t scanAndReclaimLocked_(std::size_t      quota,
+                                      const std::vector<const Node*>& hazard_snapshot) noexcept;
 
 private:
     mutable ShmMutexLock        lock_;
@@ -43,3 +45,6 @@ private:
     std::atomic<std::size_t>    approx_count_{0};
 
 };
+
+
+#include "HpRetiredManager_impl.hpp"

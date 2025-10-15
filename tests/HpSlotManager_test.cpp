@@ -183,11 +183,11 @@ TEST_F(HpSlotManagerFixture, Manager_Register_Count_Then_Cleanup_InSameThreads) 
     }
 
     // 验证计数
-    EXPECT_EQ(mgr.getShotCount(), static_cast<std::size_t>(kThreads));
+    EXPECT_EQ(mgr.getSlotCount(), static_cast<std::size_t>(kThreads));
 
     // 允许线程清理
     release_to_cleanup.store(true, std::memory_order_release);
     for (auto& th : workers) th.join();
 
-    EXPECT_EQ(mgr.getShotCount(), 0u);
+    EXPECT_EQ(mgr.getSlotCount(), 0u);
 }
