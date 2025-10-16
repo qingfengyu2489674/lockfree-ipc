@@ -8,6 +8,7 @@ add_executable(run_tests
     # ShmMutexLock_gtest.cpp
     # CentralHeap_mproc_stress.cpp
     LockFreeStack_test.cpp
+    LockFreeQueue_test.cpp
 )
 
 # 链接所需的库

@@ -13,6 +13,9 @@ public:
     value_type value;
 
 public:
+    QueueNode() noexcept 
+        : next(nullptr), value{} {}
+
     explicit QueueNode(const value_type& val)
         : next(nullptr), value(val) {}
 
