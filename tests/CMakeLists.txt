@@ -9,6 +9,7 @@ add_executable(run_tests
     # CentralHeap_mproc_stress.cpp
     LockFreeStack_test.cpp
     LockFreeQueue_test.cpp
+    LockFreeLinkedList_test.cpp
 )
 
 # 链接所需的库
