@@ -20,6 +20,7 @@ add_library(mylib STATIC
     gc_malloc/ThreadHeap/ProcessAllocatorContext.cpp
 
     EBRManager/ThreadSlot.cpp
+    EBRManager/ThreadSlotManager.cpp
 
     Tool/ShmMutexLock.cpp
 

@@ -68,6 +68,5 @@ public:
 private:
     SlotManager    slot_manager_{};
     RetiredManager retired_manager_{};
-
 };
 

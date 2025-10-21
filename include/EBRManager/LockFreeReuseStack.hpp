@@ -1,20 +1,9 @@
 #pragma once
 
 #include <atomic>
-#include "Tool/StampPtrPacker.hpp" // 引入您已经实现的 StampedPtrPacker
+#include "Tool/StampPtrPacker.hpp"
 
-/**
- * @brief 一个侵入式的无锁栈。
- * 
- * "侵入式" 意味着模板参数 Node 类型本身必须提供一个 'Node* next' 成员
- * 用于链接。这个栈不拥有它所管理的节点，也不负责节点的分配和销毁。
- * 它只负责以无锁的方式管理这些节点的链接关系。
- * 
- * 由于它管理的是长生命周期、可复用的对象（而不是需要被销毁的对象），
- * 它天然地避免了在 pop 操作中常见的 Use-After-Free (UAF) 问题。
- * 
- * @tparam Node 要被链接的节点类型。必须包含 'Node* next;' 成员。
- */
+
 template <typename Node>
 class LockFreeReuseStack {
 private:
@@ -34,7 +23,6 @@ public:
     Node* pop() noexcept;
 };
 
-// --- 实现 ---
 
 template <typename Node>
 LockFreeReuseStack<Node>::LockFreeReuseStack() {
