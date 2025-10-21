@@ -10,6 +10,8 @@ add_executable(run_tests
     LockFreeStack_test.cpp
     LockFreeQueue_test.cpp
     LockFreeLinkedList_test.cpp
+    PolicyAllocator_Integration_test.cpp
+    ThreadSlot_test.cpp
 )
 
 # 链接所需的库

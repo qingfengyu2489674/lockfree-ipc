@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdexcept>
-#include <cstring>   // std::memset
+#include <cstring>
 #include <cassert>
 #include <iostream>
 
