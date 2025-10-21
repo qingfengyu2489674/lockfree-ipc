@@ -1,6 +1,6 @@
 // GarbageNode.cpp
 #include <utility>
-#include "GarbageNode.hpp"
+#include "EBRManager/GarbageNode.hpp"
 
 GarbageNode::GarbageNode()
     : next(nullptr), garbage_ptr(nullptr), deleter(nullptr) {}

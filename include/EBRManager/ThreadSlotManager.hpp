@@ -1,3 +1,5 @@
+#pragma once
+
 #include <vector>
 #include <atomic>
 #include <memory>
@@ -8,10 +10,8 @@
 #include "EBRManager/ThreadSlot.hpp"
 #include "EBRManager/ThreadHeapAllocator.hpp"
 
-#pragma once
-
-#include <cstddef> // for size_t
-#include "gc_malloc/ThreadHeap/ThreadHeap.hpp" // 包含内存释放函数
+#include <cstddef>
+#include "gc_malloc/ThreadHeap/ThreadHeap.hpp"
 
 namespace detail {
 
