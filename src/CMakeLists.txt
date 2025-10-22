@@ -21,6 +21,9 @@ add_library(mylib STATIC
 
     EBRManager/ThreadSlot.cpp
     EBRManager/ThreadSlotManager.cpp
+    EBRManager/GarbageNode.cpp
+    EBRManager/LockFreeSingleLinkedList.cpp
+    EBRManager/EBRManager.cpp
 
     Tool/ShmMutexLock.cpp
 

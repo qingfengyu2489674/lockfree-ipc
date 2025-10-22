@@ -8,11 +8,8 @@ EBRManager::EBRManager() {
 }
 
 EBRManager::~EBRManager() {
-    // 在析构时，尝试清理所有待处理的垃圾，以防内存泄漏。
-    // 我们循环三次，确保每个纪元槽都有机会被回收。
     for (size_t i = 0; i < kNumEpochLists; ++i) {
         if (tryAdvanceEpoch_()) {
-            // 注意：新推进的纪元是 E，可回收的是 E-2
             uint64_t epoch_to_collect = global_epoch_.load(std::memory_order_relaxed) - 2;
             collectGarbage_(epoch_to_collect);
         }
@@ -26,10 +23,8 @@ ThreadSlot* EBRManager::getLocalSlot_() {
 void EBRManager::enter() {
     ThreadSlot* slot = getLocalSlot_();
     if (slot) {
-        // 读取当前的全局纪元，并将其设置为线程的局部纪元
         uint64_t current_epoch = global_epoch_.load(std::memory_order_relaxed);
         slot->setEpoch(current_epoch);
-        // 标记线程进入临界区（变为活跃状态）
         slot->enter();
     }
 }
@@ -38,13 +33,11 @@ void EBRManager::leave() {
     ThreadSlot* slot = getLocalSlot_();
     if (slot) {
         // 标记线程离开临界区（变为非活跃状态）
-        // ThreadSlot::leave() 内部应使用 release 语义，以确保此状态对其他线程可见
         slot->leave();
 
         // 离开是触发回收检查的关键点
         if (tryAdvanceEpoch_()) {
             // 如果纪元成功推进，说明某个旧纪元的垃圾现在可以安全回收了。
-            // 新的全局纪元是 E，那么纪元 E-2 的所有观察者都已消失。
             uint64_t epoch_to_collect = global_epoch_.load(std::memory_order_relaxed) - 2;
             collectGarbage_(epoch_to_collect);
         }
@@ -63,8 +56,6 @@ bool EBRManager::tryAdvanceEpoch_() {
 
         uint64_t slot_state = slot.loadState();
 
-        // 检查条件：如果一个槽位是活跃的，并且其局部纪元不等于当前全局纪元，
-        // 那么它就是一个“掉队者”，我们不能推进全局纪元。
         if (ThreadSlot::isActive(slot_state) && 
             ThreadSlot::unpackEpoch(slot_state) != current_epoch) {
             can_advance = false;
@@ -76,7 +67,6 @@ bool EBRManager::tryAdvanceEpoch_() {
     }
 
     // 如果没有掉队者，尝试原子地将全局纪元加一
-    // 使用 acq_rel 确保此次 CAS 操作既能获取之前的状态，也能释放我们自己的修改
     return global_epoch_.compare_exchange_strong(
         current_epoch, 
         current_epoch + 1,
@@ -86,14 +76,11 @@ bool EBRManager::tryAdvanceEpoch_() {
 }
 
 void EBRManager::collectGarbage_(uint64_t epoch_to_collect) {
-    // 在全局链表模型下，回收逻辑非常简单
     size_t list_index = epoch_to_collect % kNumEpochLists;
 
-    // 原子地“偷走”整个垃圾链表
     GarbageNode* garbage_head = garbage_lists_[list_index].stealList();
 
     if (garbage_head) {
-        // 将偷来的垃圾交给中心化的垃圾回收器进行安全的、有锁的销毁
         garbage_collector_.collect(garbage_head);
     }
 }

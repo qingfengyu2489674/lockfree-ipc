@@ -71,10 +71,10 @@ void ThreadSlot::leave() noexcept {
         }
 
         uint64_t epoch = unpackEpoch(old_state);
-        uint64_t new_state = pack_(epoch, false, true); // 保持已注册，设置为不活跃
+        uint64_t new_state = pack_(epoch, false, true);
 
         if (state_.compare_exchange_weak(old_state, new_state,
-                                          std::memory_order_release, // Release: 确保leave之前的操作对扫描器可见
+                                          std::memory_order_release,
                                           std::memory_order_relaxed)) {
             return;
         }
