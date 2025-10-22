@@ -28,7 +28,7 @@ public:
     void unregister() noexcept;
 
     // EBR临界区管理
-    void enter() noexcept;
+    void enter(uint64_t current_epoch) noexcept; 
     void leave() noexcept;
     
     // 纪元更新

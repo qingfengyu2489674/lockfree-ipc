@@ -40,21 +40,21 @@ void ThreadSlot::unregister() noexcept {
     }
 }
 
-// --- 新增方法实现 ---
-void ThreadSlot::enter() noexcept {
+void ThreadSlot::enter(uint64_t current_epoch) noexcept {
+    // 这个方法原子地更新纪元并将线程标记为活跃。
+    // 我们也在这里处理“注册”的逻辑。
     uint64_t old_state = state_.load(std::memory_order_relaxed);
     for (;;) {
-        // 只有已注册且不活跃的线程才能进入
-        if (!isRegistered(old_state) || isActive(old_state)) {
-            // 如果已经活跃，或槽位不再属于我们，则不做任何事
+        // 如果已经活跃，则什么都不做
+        if (isActive(old_state)) {
             return;
         }
-        
-        uint64_t epoch = unpackEpoch(old_state);
-        uint64_t new_state = pack_(epoch, true, true); // 保持已注册，设置为活跃
+
+        // 打包新的状态：使用传入的纪元，并标记为 active 和 registered。
+        uint64_t new_state = pack_(current_epoch, true, true); 
 
         if (state_.compare_exchange_weak(old_state, new_state,
-                                          std::memory_order_release, // Release: 确保enter之前的操作先完成
+                                          std::memory_order_release,
                                           std::memory_order_relaxed)) {
             return;
         }

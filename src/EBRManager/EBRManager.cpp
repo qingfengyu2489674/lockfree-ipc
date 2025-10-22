@@ -8,11 +8,8 @@ EBRManager::EBRManager() {
 }
 
 EBRManager::~EBRManager() {
-    for (size_t i = 0; i < kNumEpochLists; ++i) {
-        if (tryAdvanceEpoch_()) {
-            uint64_t epoch_to_collect = global_epoch_.load(std::memory_order_relaxed) - 2;
-            collectGarbage_(epoch_to_collect);
-        }
+    for (size_t list_index = 0; list_index < kNumEpochLists; ++list_index) {
+        collectGarbage_(list_index);
     }
 }
 
@@ -24,10 +21,11 @@ void EBRManager::enter() {
     ThreadSlot* slot = getLocalSlot_();
     if (slot) {
         uint64_t current_epoch = global_epoch_.load(std::memory_order_relaxed);
-        slot->setEpoch(current_epoch);
-        slot->enter();
+        // 调用新的、单一的、原子化的方法
+        slot->enter(current_epoch);
     }
 }
+
 
 void EBRManager::leave() {
     ThreadSlot* slot = getLocalSlot_();
@@ -35,11 +33,13 @@ void EBRManager::leave() {
         // 标记线程离开临界区（变为非活跃状态）
         slot->leave();
 
-        // 离开是触发回收检查的关键点
         if (tryAdvanceEpoch_()) {
-            // 如果纪元成功推进，说明某个旧纪元的垃圾现在可以安全回收了。
-            uint64_t epoch_to_collect = global_epoch_.load(std::memory_order_relaxed) - 2;
-            collectGarbage_(epoch_to_collect);
+            uint64_t current_global_epoch = global_epoch_.load(std::memory_order_relaxed);
+
+            if (current_global_epoch >= 2) {
+                uint64_t epoch_to_collect = current_global_epoch - 2;
+                collectGarbage_(epoch_to_collect);
+            }
         }
     }
 }
@@ -57,7 +57,7 @@ bool EBRManager::tryAdvanceEpoch_() {
         uint64_t slot_state = slot.loadState();
 
         if (ThreadSlot::isActive(slot_state) && 
-            ThreadSlot::unpackEpoch(slot_state) != current_epoch) {
+            ThreadSlot::unpackEpoch(slot_state) < current_epoch) {
             can_advance = false;
         }
     });
