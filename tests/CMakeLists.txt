@@ -13,8 +13,9 @@ add_executable(run_tests
     # PolicyAllocator_Integration_test.cpp
     # ThreadSlot_test.cpp
     # lock_free_reuse_stack_interface_test.cpp
-    thread_slot_manager_test.cpp
-    EBRManager_test.cpp
+    # thread_slot_manager_test.cpp
+    # EBRManager_test.cpp
+    LockFreeSkipList_test.cpp
 )
 
 # 链接所需的库

@@ -1,21 +1,21 @@
-// --- 辅助工具函数 (Pointer Tagging) ---
+#include "EBRManager/ebr.hpp"
 
 template<typename K, typename V, typename C>
-bool LockFreeSkipList<K, V, C>::isMarked_(Node* ptr) const noexcept {
-    return (reinterpret_cast<uintptr_t>(ptr) & 1) != 0;
-}
-
-template<typename K, typename V, typename C>
-typename LockFreeSkipList<K, V, C>::Node* LockFreeSkipList<K, V, C>::getMarked_(Node* ptr) const noexcept {
+typename LockFreeSkipList<K, V, C>::Node* 
+LockFreeSkipList<K, V, C>::getMarked_(Node* ptr) const noexcept {
     return reinterpret_cast<Node*>(reinterpret_cast<uintptr_t>(ptr) | 1);
 }
 
 template<typename K, typename V, typename C>
-typename LockFreeSkipList<K, V, C>::Node* LockFreeSkipList<K, V, C>::getUnmarked_(Node* ptr) const noexcept {
-    return reinterpret_cast<Node*>(reinterpret_cast<uintptr_t>(ptr) & ~1);
+bool LockFreeSkipList<K, V, C>::isMarked_(typename LockFreeSkipList<K, V, C>::Node* ptr) const noexcept {
+    return (reinterpret_cast<uintptr_t>(ptr) & 1) != 0;
 }
 
-// --- 辅助工具函数 (Random Height) ---
+template<typename K, typename V, typename C>
+typename LockFreeSkipList<K, V, C>::Node* 
+LockFreeSkipList<K, V, C>::getUnmarked_(Node* ptr) const noexcept {
+    return reinterpret_cast<Node*>(reinterpret_cast<uintptr_t>(ptr) & ~1);
+}
 
 template<typename K, typename V, typename C>
 std::mt19937& LockFreeSkipList<K, V, C>::get_random_engine_() {
@@ -24,21 +24,18 @@ std::mt19937& LockFreeSkipList<K, V, C>::get_random_engine_() {
 }
 
 template<typename K, typename V, typename C>
-int LockFreeSkipList<K, V, C>::random_height_() {
-    // 使用几何分布来模拟抛硬币
-    // 参数 p=0.5 意味着有50%的概率成功（高度+1）
+int LockFreeSkipList<K, V, C>::random_height_(){
     std::geometric_distribution<> dist(0.5);
     int height = dist(get_random_engine_()) + 1;
     return std::min(height, kMaxHeight);
 }
 
-
 template<typename K, typename V, typename C>
 LockFreeSkipList<K, V, C>::LockFreeSkipList(EBRManager& ebr_manager)
-    : ebr_manager_(ebr_manager) {
+    : ebr_manager_(ebr_manager), compare_(){
     // 创建一个逻辑上为“负无穷大”的键
-    Key min_key = std::numeric_limits<Key>::min(); 
-    head_ = Node::creatHead(min_key, kMaxHeight);
+    K min_key = std::numeric_limits<K>::min(); 
+    head_ = Node::createHead(min_key, kMaxHeight);
 }
 
 template<typename K, typename V, typename C>
@@ -51,39 +48,42 @@ LockFreeSkipList<K, V, C>::~LockFreeSkipList() {
     }
 }
 
-
 template<typename K, typename V, typename C>
-void LockFreeSkipList<K, V, C>::findNode_(const Key& key, Node* prevs[], Node* nexts[]) {
+void LockFreeSkipList<K, V, C>::findNode_(const K& key, Node* prevs[], Node* nexts[]) {
 retry:
-    Node* prev = head_;
-    for (int level = kMaxHeight - 1; level >= 0; --level) {
-        Node* curr = getUnmarked_(prev->forward_[level].load(std::memory_order_acquire));
-        while (true) {
-            Node* next = curr ? curr->forward_[level].load(std::memory_order_acquire) : nullptr;
-            
-            // 检查 next 指针是否被标记
-            if (isMarked_(next)) {
-                // 帮助物理删除，然后从头重试整个查找过程
-                // 因为列表结构可能已发生重大变化
-                // helpUnlink_(curr, next, level); // 这里的实现细节可能导致需要重试
-                goto retry; // GOTO 是处理多层循环重试的最简单方式
-            }
+    Node* pred = head_;
 
-            if (!curr || compare_(key, curr->key)) {
-                // 找到了在这一层的位置
-                break; 
-            }
-            prev = curr;
-            curr = getUnmarked_(next);
+    for (int level = kMaxHeight - 1; level >= 0; --level) {
+        // 1. 获取 pred 在当前层的后继节点
+        Node* curr = getUnmarked_(pred->forward_[level].load(std::memory_order_acquire));
+
+        // 2. 只要 curr 存在且其键值小于目标 key，就继续向右前进
+        while (curr != nullptr && compare_(curr->key, key)) {
+            pred = curr;
+            curr = getUnmarked_(curr->forward_[level].load(std::memory_order_acquire));
         }
-        prevs[level] = prev;
+
+        // 3. 检查 curr 是否被标记。如果被标记，说明链表结构已变，需要重试
+        if (curr != nullptr) {
+            Node* next_ptr = curr->forward_[level].load(std::memory_order_acquire);
+            if (isMarked_(next_ptr)) {
+                // 帮助解链接并从头开始整个查找过程
+                helpUnlink_(pred, curr, level); 
+                goto retry;
+            }
+        }
+        
+        // 4. 循环结束后:
+        //    - pred 是最后一个 key < target_key 的节点
+        //    - curr 是第一个 key >= target_key 的节点 (或者是 nullptr)
+        prevs[level] = pred;
         nexts[level] = curr;
     }
 }
 
 
 template<typename K, typename V, typename C>
-bool LockFreeSkipList<K, V, C>::find(const Key& key, Value& value) { // 移除 const
+bool LockFreeSkipList<K, V, C>::find(const K& key, V& value) { // 移除 const
     ebr::Guard guard(ebr_manager_);
 
     Node* prevs[kMaxHeight];
@@ -102,7 +102,7 @@ bool LockFreeSkipList<K, V, C>::find(const Key& key, Value& value) { // 移除 c
 
 
 template<typename K, typename V, typename C>
-bool LockFreeSkipList<K, V, C>::insert(const Key& key, const Value& value) {
+bool LockFreeSkipList<K, V, C>::insert(const K& key, const V& value) {
     ebr::Guard guard(ebr_manager_);
 
     Node* prevs[kMaxHeight];
@@ -131,16 +131,11 @@ bool LockFreeSkipList<K, V, C>::insert(const Key& key, const Value& value) {
             // 成功！现在尽力而为地链接上层
             for (int i = 1; i < height; ++i) {
                 while(true) {
-                    // re-find preds because they may have changed
-                    // This part is complex. For simplicity, we can just link.
-                    // A simple CAS without re-finding is a common implementation, though less robust.
                     if (prevs[i]->forward_[i].compare_exchange_strong(nexts[i], new_node, std::memory_order_relaxed)) {
-                        break;
+                        break; // cas操作成功，跳出这一层
                     }
-                    // If CAS fails, we need to re-find prevs/nexts for this level.
-                    // For now, we accept that higher-level links might fail.
-                    findNode_(key, prevs, nexts); // Re-scan to get correct new prevs
-                    if (getUnmarked_(prevs[i]->forward_[i]) != nexts[i]) break; // Another thread intervened, abort for this level
+                    findNode_(key, prevs, nexts); // 失败了更新快照，再次尝试
+                    if (getUnmarked_(prevs[i]->forward_[i]) != nexts[i]) break; // 另一个节点被插入，放弃这一层
                 }
             }
             return true;
@@ -150,7 +145,6 @@ bool LockFreeSkipList<K, V, C>::insert(const Key& key, const Value& value) {
         }
     }
 }
-
 
 
 
@@ -166,8 +160,9 @@ bool LockFreeSkipList<K, V, C>::tryMarkForRemoval_(Node* node_to_delete) {
             }
         }
     }
-    return true; // Node was already marked by another thread, which is fine
+    return true;
 }
+
 
 template<typename K, typename V, typename C>
 void LockFreeSkipList<K, V, C>::helpUnlink_(Node* prev, Node* marked_next, int level) {
@@ -179,7 +174,7 @@ void LockFreeSkipList<K, V, C>::helpUnlink_(Node* prev, Node* marked_next, int l
 
 
 template<typename K, typename V, typename C>
-bool LockFreeSkipList<K, V, C>::remove(const Key& key) {
+bool LockFreeSkipList<K, V, C>::remove(const K& key) {
     ebr::Guard guard(ebr_manager_);
     
     Node* prevs[kMaxHeight];
@@ -212,3 +207,4 @@ bool LockFreeSkipList<K, V, C>::remove(const Key& key) {
         return true;
     }
 }
+
