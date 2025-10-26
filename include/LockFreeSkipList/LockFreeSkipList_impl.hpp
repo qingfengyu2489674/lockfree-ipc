@@ -1,4 +1,5 @@
-#include "EBRManager/ebr.hpp"
+#pragma once
+#include "EBRManager/guard.hpp"
 
 // --- 辅助函数 (标记指针 & 随机层高) ---
 

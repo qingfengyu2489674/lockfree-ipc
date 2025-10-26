@@ -1,9 +1,8 @@
 #pragma once
 
 #include "LockFreeHashMap.hpp"
-#include <climits> // For CHAR_BIT
+#include <climits>
 
-// --- 构造函数 / 析构函数 ---
 
 template <typename K, typename V, typename Hash, typename KeyEqual>
 LockFreeHashMap<K, V, Hash, KeyEqual>::LockFreeHashMap(size_t initial_bucket_count)
@@ -18,13 +17,9 @@ LockFreeHashMap<K, V, Hash, KeyEqual>::LockFreeHashMap(size_t initial_bucket_cou
     }
 }
 
+
 template <typename K, typename V, typename Hash, typename KeyEqual>
-LockFreeHashMap<K, V, Hash, KeyEqual>::~LockFreeHashMap() {
-    // std::unique_ptr 会自动处理 buckets_ 数组的销毁，
-    // 调用每个 LockFreeChain 的析构函数，并释放内存。
-    // ebr_ 和 hasher_ 也会被自动销毁。
-    // 因此，析构函数体为空。
-}
+LockFreeHashMap<K, V, Hash, KeyEqual>::~LockFreeHashMap() {}
 
 // --- 公共成员函数 ---
 
@@ -35,6 +30,7 @@ std::optional<V> LockFreeHashMap<K, V, Hash, KeyEqual>::find(const K& key) {
     return buckets_[index].find(key, ebr_);
 }
 
+
 template <typename K, typename V, typename Hash, typename KeyEqual>
 template <typename KeyType, typename ValueType>
 bool LockFreeHashMap<K, V, Hash, KeyEqual>::insert(KeyType&& key, ValueType&& value) {
@@ -44,6 +40,7 @@ bool LockFreeHashMap<K, V, Hash, KeyEqual>::insert(KeyType&& key, ValueType&& va
     size_t index = getBucketIndex_(key_ref);
     return buckets_[index].insert(std::forward<KeyType>(key), std::forward<ValueType>(value), ebr_);
 }
+
 
 template <typename K, typename V, typename Hash, typename KeyEqual>
 bool LockFreeHashMap<K, V, Hash, KeyEqual>::remove(const K& key) {
