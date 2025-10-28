@@ -21,8 +21,6 @@ public:
     static constexpr std::size_t kHazardPointers = 2; 
     using hp_organizer_type = HazardPointerOrganizer<node_type, kHazardPointers, AllocPolicy>;
 
-    // *** 修正点: 不再硬编码 TlsSlot 类型名 ***
-    // 我们将直接使用 acquireTlsSlot() 的返回类型
     
 public:
     explicit LockFreeLinkedList(hp_organizer_type& hp_organizer) noexcept;
@@ -35,12 +33,10 @@ public:
     bool isEmpty() const noexcept;
 
 private:
-    // *** 修正点: `find` 函数的签名将使用 decltype 来推断槽指针类型 ***
     void find(
         const value_type& value, 
         node_ptr& prev, 
         node_ptr& curr, 
-        // 使用 decltype 自动获取 acquireTlsSlot() 的返回类型
         decltype(std::declval<hp_organizer_type>().acquireTlsSlot()) slot 
     );
 

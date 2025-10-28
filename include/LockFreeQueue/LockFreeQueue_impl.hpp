@@ -55,12 +55,10 @@ void LockFreeQueue<T, AllocPolicy>::pushImpl(U&& v) {
 }
 
 
-// *** tryPop 的全新、更安全的实现 ***
 template <class T, class AllocPolicy>
 bool LockFreeQueue<T, AllocPolicy>::tryPop(value_type& out) noexcept {
+    auto* slot = hp_organizer_.acquireTlsSlot();
     for (;;) {
-        auto* slot = hp_organizer_.acquireTlsSlot();
-        
         // 1. 读取并保护 head
         node_type* old_head = head_.load(std::memory_order_acquire);
         if (slot) {

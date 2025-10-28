@@ -9,7 +9,7 @@ add_executable(run_tests
     # CentralHeap_mproc_stress.cpp
     # LockFreeStack_test.cpp
     # LockFreeQueue_test.cpp
-    # LockFreeLinkedList_test.cpp
+    LockFreeLinkedList_test.cpp
     # PolicyAllocator_Integration_test.cpp
     # ThreadSlot_test.cpp
     # lock_free_reuse_stack_interface_test.cpp
