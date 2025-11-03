@@ -349,14 +349,24 @@ TEST_F(LockFreeSkipListFixture, ConcurrentMixedWorkload) {
 
     // 验证... (保持不变)
     ASSERT_NO_FATAL_FAILURE([&](){
+        using Node   = typename SkipList::Node;
+        using Packer = StampPtrPacker<Node>;
+        using Packed = typename Packer::type;
+
         std::vector<int> final_keys;
-        auto* node = list->getUnmarked_(list->head_->forward_[0].load());
-        while(node != nullptr){
+
+        // 从 head_->next 开始
+        Packed p = list->head_->nextSlot(0).load(std::memory_order_relaxed);
+        Node* node = list->getUnmarked_(Packer::unpackPtr(p));
+
+        while (node != nullptr) {
             final_keys.push_back(node->key);
-            node = list->getUnmarked_(node->forward_[0].load());
+            p = node->nextSlot(0).load(std::memory_order_relaxed);
+            node = list->getUnmarked_(Packer::unpackPtr(p));
         }
 
-        EXPECT_TRUE(std::is_sorted(final_keys.begin(), final_keys.end())) << "Skip list is not sorted after stress test!";
+        EXPECT_TRUE(std::is_sorted(final_keys.begin(), final_keys.end()))
+            << "Skip list is not sorted after stress test!";
     }());
 
     list->~SkipList();

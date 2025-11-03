@@ -19,6 +19,9 @@ public:
     static type pack(T* ptr, uint16_t stamp);
     static T* unpackPtr(type packed_val);
     static uint16_t unpackStamp(type packed_val);
+    static bool casBump(atomic_type& slot, type& expected, T* desired_ptr,
+                        std::memory_order succ = std::memory_order_release,
+                        std::memory_order fail = std::memory_order_acquire) noexcept;
 };
 
 template <typename T>
@@ -40,4 +43,17 @@ T* StampPtrPacker<T>::unpackPtr(type packed_val) {
 template <typename T>
 uint16_t StampPtrPacker<T>::unpackStamp(type packed_val) {
     return static_cast<uint16_t>(packed_val >> kPointerBits);
+}
+
+template <typename T>
+bool StampPtrPacker<T>::casBump(
+    typename StampPtrPacker<T>::atomic_type& slot,
+    typename StampPtrPacker<T>::type& expected,
+    T* desired_ptr,
+    std::memory_order succ,
+    std::memory_order fail) noexcept
+{
+    auto desired = pack(desired_ptr,
+                        static_cast<uint16_t>(unpackStamp(expected) + 1));
+    return slot.compare_exchange_weak(expected, desired, succ, fail);
 }

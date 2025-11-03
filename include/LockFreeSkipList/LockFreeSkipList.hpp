@@ -11,6 +11,10 @@
 template<typename Key, typename Value, typename Compare = std::less<Key>>
 class LockFreeSkipList {
 public:
+    using Node   = LockFreeSkipListNode<Key, Value>;
+    using Packer = StampPtrPacker<Node>;
+    using Packed = typename Packer::type;
+
     explicit LockFreeSkipList(EBRManager& ebr_manager);
     ~LockFreeSkipList();
 
@@ -24,7 +28,6 @@ public:
     bool remove(const Key& key);
 
 public: // 公共类型定义和成员
-    using Node = LockFreeSkipListNode<Key, Value>;
     static constexpr int kMaxHeight = 4;
     Node* head_; 
     EBRManager& ebr_manager_;
