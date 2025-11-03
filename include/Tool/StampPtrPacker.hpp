@@ -20,7 +20,7 @@ public:
     static T* unpackPtr(type packed_val);
     static uint16_t unpackStamp(type packed_val);
     static bool casBump(atomic_type& slot, type& expected, T* desired_ptr,
-                        std::memory_order succ = std::memory_order_release,
+                        std::memory_order succ = std::memory_order_acq_rel,
                         std::memory_order fail = std::memory_order_acquire) noexcept;
 };
 

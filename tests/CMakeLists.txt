@@ -17,7 +17,7 @@ add_executable(run_tests
     # EBRManager_test.cpp
     LockFreeSkipList_test.cpp
     # LockFreeChain_test.cpp
-    # LockFreeHashMap_test.cpp
+    LockFreeHashMap_test.cpp
 
     skiplist_node_tests.cpp
 )
