@@ -22,19 +22,19 @@ LockFreeStack<T, AllocPolicy>::~LockFreeStack() noexcept {
 template <class T, class AllocPolicy>
 void LockFreeStack<T, AllocPolicy>::push(const value_type& v) {
     auto* new_node = AllocPolicy::template allocate<node_type>(v);
-    new_node->next = head_.load(std::memory_order_relaxed);
+    new_node->next = head_.load(MemoryOrder::Relaxed);
     while (!head_.compare_exchange_weak(
         new_node->next, new_node,
-        std::memory_order_release, std::memory_order_relaxed));
+        MemoryOrder::Release, MemoryOrder::Relaxed));
 }
 
 template <class T, class AllocPolicy>
 void LockFreeStack<T, AllocPolicy>::push(value_type&& v) {
     auto* new_node = AllocPolicy::template allocate<node_type>(std::move(v));
-    new_node->next = head_.load(std::memory_order_relaxed);
+    new_node->next = head_.load(MemoryOrder::Relaxed);
     while (!head_.compare_exchange_weak(
         new_node->next, new_node,
-        std::memory_order_release, std::memory_order_relaxed));
+        MemoryOrder::Release, MemoryOrder::Relaxed));
 }
 
 template <class T, class AllocPolicy>
@@ -44,7 +44,7 @@ bool LockFreeStack<T, AllocPolicy>::tryPop(value_type& out) noexcept {
     if (!slot) return false;
 
     for (;;) {
-        node_type* old_head = head_.load(std::memory_order_acquire);
+        node_type* old_head = head_.load(MemoryOrder::Acquire);
 
         if (!old_head) {
             slot->clear(0);
@@ -53,9 +53,9 @@ bool LockFreeStack<T, AllocPolicy>::tryPop(value_type& out) noexcept {
 
         slot->protect(0, old_head);
         
-        std::atomic_thread_fence(std::memory_order_seq_cst);
+        atomic_thread_fence(MemoryOrder::SeqCst);
 
-        if (old_head != head_.load(std::memory_order_acquire)) {
+        if (old_head != head_.load(MemoryOrder::Acquire)) {
             continue;
         }
 
@@ -63,8 +63,8 @@ bool LockFreeStack<T, AllocPolicy>::tryPop(value_type& out) noexcept {
 
         if (head_.compare_exchange_strong(
                 old_head, next,
-                std::memory_order_acq_rel,
-                std::memory_order_relaxed)) {
+                MemoryOrder::AcqRel,
+                MemoryOrder::Relaxed)) {
             
             out = std::move(old_head->value);
             
@@ -80,7 +80,7 @@ bool LockFreeStack<T, AllocPolicy>::tryPop(value_type& out) noexcept {
 
 template <class T, class AllocPolicy>
 bool LockFreeStack<T, AllocPolicy>::isEmpty() const noexcept {
-    return head_.load(std::memory_order_acquire) == nullptr;
+    return head_.load(MemoryOrder::Acquire) == nullptr;
 }
 
 // *** 关键修改：删除了 retireNode, collectRetired, 和 drainAll 的实现 ***

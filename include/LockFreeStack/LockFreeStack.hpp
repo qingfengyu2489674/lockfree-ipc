@@ -1,10 +1,10 @@
 // LockFreeStack/LockFreeStack.hpp
 #pragma once
-#include <atomic>
-#include <cstddef>
+// #include <atomic>
 
+#include <cstddef>
+#include "atomics/x86_atomics.hpp" 
 #include "LockFreeStack/StackNode.hpp"
-// *** 关键修改：现在只包含组织器，不再需要单独的管理类头文件 ***
 #include "Hazard/HazardPointerOrganizer.hpp"
 
 // 前向声明 AllocPolicy 的默认类型
@@ -31,7 +31,7 @@ public:
 
 
 private:
-    std::atomic<node_type*> head_{nullptr};
+    Atomic<node_type*> head_{nullptr};
     hp_organizer_type& hp_organizer_;
 };
 
