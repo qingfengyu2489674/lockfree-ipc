@@ -6,13 +6,17 @@ template <class T, class AllocPolicy>
 LockFreeStack<T, AllocPolicy>::LockFreeStack(hp_organizer_type& hp_organizer) noexcept
     : hp_organizer_(hp_organizer), head_{nullptr} {}
 
+
 template <class T, class AllocPolicy>
 LockFreeStack<T, AllocPolicy>::~LockFreeStack() noexcept {
-    // 析构函数可以简化。栈本身不负责强制清理所有节点的内存，
-    // 这个职责属于 HazardPointerOrganizer 的所有者。
-    // 我们只需确保栈不再持有任何节点的引用。
-    head_.store(nullptr, std::memory_order_relaxed);
+    // 必须清空栈中剩余元素，否则会造成内存泄漏
+    value_type discard_val;
+    while (tryPop(discard_val)) {
+        // 循环弹出直到为空，tryPop 内部会调用 retire
+    }
+    // head_ 此时已为 nullptr
 }
+
 
 // push 方法不需要改变，因为它依赖的是 AllocPolicy，而不是HP机制
 template <class T, class AllocPolicy>
@@ -35,18 +39,21 @@ void LockFreeStack<T, AllocPolicy>::push(value_type&& v) {
 
 template <class T, class AllocPolicy>
 bool LockFreeStack<T, AllocPolicy>::tryPop(value_type& out) noexcept {
+
+    auto* slot = hp_organizer_.acquireTlsSlot();
+    if (!slot) return false;
+
     for (;;) {
         node_type* old_head = head_.load(std::memory_order_acquire);
 
         if (!old_head) {
+            slot->clear(0);
             return false;
         }
 
-        auto* slot = hp_organizer_.acquireTlsSlot();
+        slot->protect(0, old_head);
         
-        if (slot) {
-            slot->protect(0, old_head);
-        }
+        std::atomic_thread_fence(std::memory_order_seq_cst);
 
         if (old_head != head_.load(std::memory_order_acquire)) {
             if (slot) {
@@ -63,19 +70,12 @@ bool LockFreeStack<T, AllocPolicy>::tryPop(value_type& out) noexcept {
                 std::memory_order_relaxed)) {
             
             out = std::move(old_head->value);
-
-            if (slot) {
-                slot->clear(0);
-            }
             
             hp_organizer_.retire(old_head);
             
             return true;
         }
 
-        if (slot) {
-            slot->clear(0);
-        }
     }
 }
 
