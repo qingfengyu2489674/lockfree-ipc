@@ -56,9 +56,6 @@ bool LockFreeStack<T, AllocPolicy>::tryPop(value_type& out) noexcept {
         std::atomic_thread_fence(std::memory_order_seq_cst);
 
         if (old_head != head_.load(std::memory_order_acquire)) {
-            if (slot) {
-                slot->clear(0);
-            }
             continue;
         }
 
@@ -72,6 +69,8 @@ bool LockFreeStack<T, AllocPolicy>::tryPop(value_type& out) noexcept {
             out = std::move(old_head->value);
             
             hp_organizer_.retire(old_head);
+
+            slot->clear(0);
             
             return true;
         }
