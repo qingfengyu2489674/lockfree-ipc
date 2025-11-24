@@ -2,43 +2,44 @@
 #include <gtest/gtest.h>
 #include <sys/mman.h> 
 #include <iostream>
-#include "ShareMemory/ShareMemoryRegion.hpp"
+#include "ShareMemory/ShmSegment.hpp" 
 
 class ShareMemoryRegion;
 
 struct SharedMemoryTestFixture : public ::testing::Test {
 public: // <--- 为常量和类型定义设置 public区域
     static constexpr const char* kShmName = "/lf_ipc_test";
-    static constexpr std::size_t kRegionBytes = 256u << 20; // 128MB
+    static constexpr std::size_t kRegionBytes = 256u << 20;
 
 protected: // <--- 为实现细节保留 protected 区域
-    inline static ShareMemoryRegion* shm = nullptr;
+    inline static std::unique_ptr<ShmSegment> segment;
     inline static void* base = nullptr;
 
     static void SetUpTestSuite() {
-        ShareMemoryRegion::unlinkSegment(kShmName);
-        std::cout << "Pre-emptively unlinked any stale shared memory segment." << std::endl;
+        ShmSegment::unlink(kShmName);
+        std::cout << "Pre-emptively unlinked." << std::endl;
         try {
-            shm = new ShareMemoryRegion(kShmName, kRegionBytes, true);
-            ASSERT_NE(shm, nullptr) << "Failed to create ShareMemoryRegion object.";
+            segment = std::make_unique<ShmSegment>(kShmName, kRegionBytes);
+            ASSERT_NE(segment, nullptr);
 
-            base = shm->getMappedAddress();
+            base = segment->getBaseAddress();
             std::cout << "Shared memory base address: " << base << std::endl;
             
-            ASSERT_NE(base, nullptr) << "Mapped address is null. Shared memory setup failed.";
+            ASSERT_NE(base, nullptr);
 
         } catch (const std::exception& e) {
-            std::cerr << "Exception during SetUpTestSuite: " << e.what() << std::endl;
-            FAIL() << "Failed to initialize shared memory due to an exception: " << e.what();
+            std::cerr << "Exception: " << e.what() << std::endl;
+            FAIL() << e.what();
         }
     }
 
     static void TearDownTestSuite() {
-        delete shm;
-        shm = nullptr;
+        // 销毁对象 (munmap, close)
+        segment.reset();
         base = nullptr;
 
-        ShareMemoryRegion::unlinkSegment(kShmName);
-        std::cout << "Shared memory segment '" << kShmName << "' unlinked." << std::endl;
+        // 清理文件
+        ShmSegment::unlink(kShmName);
+        std::cout << "Unlinked." << std::endl;
     }
 };

@@ -3,10 +3,13 @@
 #include "gc_malloc/CentralHeap/ShmChunkAllocator.hpp"
 #include "gc_malloc/CentralHeap/ShmFreeChunkList.hpp"
 
+#include "ShareMemory/ShmHeader.hpp" 
+
 #include <new>
 #include <type_traits>
 #include <cassert>
 #include <iostream>
+#include <thread>
 
 static inline std::size_t align_up(std::size_t x, std::size_t a) {
     return (x + (a - 1)) & ~(a - 1);
@@ -24,38 +27,36 @@ CentralHeap& CentralHeap::GetInstance(void* shm_base, size_t total_bytes) {
     auto* H = reinterpret_cast<ShmHeader*>(base);
 
     ShmState  expected = ShmState::kUninit;
-    if (H->state.compare_exchange_strong(
-            expected, ShmState::kConstructing,
+    if (H->app_state.compare_exchange_strong(
+            expected, ShmState::kInitializing,
             std::memory_order_acq_rel,   // 成功：acq_rel，拿到初始化权
             std::memory_order_acquire))  // 失败：acquire，读取别人发布的结果
     {
         // —— 我是“唯一的初始化者” ——
-        const size_t off_heap = align_up(sizeof(ShmHeader), alignof(CentralHeap));
+        uint64_t off_heap = H->heap_offset;
         const size_t off_data = align_up(off_heap + sizeof(CentralHeap), 64);
-        assert(total_bytes > off_data);
 
-        H->heap_off     = static_cast<uint64_t>(off_heap);
-        H->data_off     = static_cast<uint64_t>(off_data);
-        H->region_bytes = total_bytes - off_data;
+        assert(H->total_size > off_data);
+        size_t region_bytes = H->total_size - off_data;
 
-        void* heap_addr = base + H->heap_off;
-        void* data_base = base + H->data_off;
+        void* heap_addr = base + off_heap;
+        void* data_base = base + off_data;
 
-        // 只会被调用一次
-        new (heap_addr) CentralHeap(data_base, H->region_bytes);
+        new (heap_addr) CentralHeap(data_base, region_bytes);
         reinterpret_cast<CentralHeap*>(heap_addr)->self_off_ = off_heap;
 
         // 发布“就绪”
-        H->state.store(ShmState::kReady, std::memory_order_release);
+        H->app_state.store(ShmState::kReady, std::memory_order_release);
     } else {
         // —— 我不是初始化者：等待初始化完成 ——
         // 若出现短窗口看到的不是 kReady，就自旋等待；必要时 sleep/backoff
-        while (H->state.load(std::memory_order_acquire) != ShmState::kReady) {
-            // 可加 pause/backoff 或 sched_yield
+        while (H->app_state.load(std::memory_order_acquire) != ShmState::kReady) {
+             // 简单的 yield，生产环境建议加 pause 指令
+             std::this_thread::yield();
         }
     }
 
-    return *reinterpret_cast<CentralHeap*>(base + H->heap_off);
+    return *reinterpret_cast<CentralHeap*>(base + H->heap_offset);
 }
 
 
