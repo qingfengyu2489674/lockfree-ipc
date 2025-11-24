@@ -1,40 +1,40 @@
 // LockFreeStack_impl.hpp
 #pragma once
 
-// *** 关键修改：构造函数实现更新 ***
 template <class T, class AllocPolicy>
 LockFreeStack<T, AllocPolicy>::LockFreeStack(hp_organizer_type& hp_organizer) noexcept
-    : hp_organizer_(hp_organizer), head_{nullptr} {}
+    : hp_organizer_(hp_organizer), head_{0} {}
 
 
 template <class T, class AllocPolicy>
 LockFreeStack<T, AllocPolicy>::~LockFreeStack() noexcept {
-    // 必须清空栈中剩余元素，否则会造成内存泄漏
     value_type discard_val;
     while (tryPop(discard_val)) {
         // 循环弹出直到为空，tryPop 内部会调用 retire
     }
-    // head_ 此时已为 nullptr
 }
 
 
-// push 方法不需要改变，因为它依赖的是 AllocPolicy，而不是HP机制
 template <class T, class AllocPolicy>
 void LockFreeStack<T, AllocPolicy>::push(const value_type& v) {
     auto* new_node = AllocPolicy::template allocate<node_type>(v);
-    new_node->next = head_.load(MemoryOrder::Relaxed);
-    while (!head_.compare_exchange_weak(
-        new_node->next, new_node,
-        MemoryOrder::Release, MemoryOrder::Relaxed));
+    HeadPacker packer(head_); 
+    auto current = packer.load(MemoryOrder::Relaxed);
+    do {
+        new_node->next = current.ptr;
+    } while (!packer.casBump(current, new_node, MemoryOrder::Release, MemoryOrder::Relaxed));
 }
 
 template <class T, class AllocPolicy>
 void LockFreeStack<T, AllocPolicy>::push(value_type&& v) {
     auto* new_node = AllocPolicy::template allocate<node_type>(std::move(v));
-    new_node->next = head_.load(MemoryOrder::Relaxed);
-    while (!head_.compare_exchange_weak(
-        new_node->next, new_node,
-        MemoryOrder::Release, MemoryOrder::Relaxed));
+
+    HeadPacker packer(head_);
+    auto current = packer.load(MemoryOrder::Relaxed);
+    
+    do {
+        new_node->next = current.ptr;
+    } while (!packer.casBump(current, new_node, MemoryOrder::Release, MemoryOrder::Relaxed));
 }
 
 template <class T, class AllocPolicy>
@@ -43,35 +43,36 @@ bool LockFreeStack<T, AllocPolicy>::tryPop(value_type& out) noexcept {
     auto* slot = hp_organizer_.acquireTlsSlot();
     if (!slot) return false;
 
-    for (;;) {
-        node_type* old_head = head_.load(MemoryOrder::Acquire);
+    HeadPacker packer(head_);
 
-        if (!old_head) {
+    for (;;) {
+        auto old_head_packed = packer.load(MemoryOrder::Acquire);
+        node_type* old_head_ptr = old_head_packed.ptr;
+
+        if (!old_head_ptr) {
             slot->clear(0);
             return false;
         }
 
-        slot->protect(0, old_head);
+        slot->protect(0, old_head_ptr);
         
         atomic_thread_fence(MemoryOrder::SeqCst);
 
-        if (old_head != head_.load(MemoryOrder::Acquire)) {
+        if (old_head_packed != packer.load(MemoryOrder::Acquire)) {
             continue;
         }
 
-        node_type* next = old_head->next;
+        node_type* next = old_head_ptr->next;
 
-        if (head_.compare_exchange_strong(
-                old_head, next,
+        if (packer.casBump(
+                old_head_packed, next,
                 MemoryOrder::AcqRel,
                 MemoryOrder::Relaxed)) {
             
-            out = std::move(old_head->value);
-            
-            hp_organizer_.retire(old_head);
+            out = std::move(old_head_ptr->value);
+            hp_organizer_.retire(old_head_ptr);
 
             slot->clear(0);
-            
             return true;
         }
 
@@ -80,8 +81,6 @@ bool LockFreeStack<T, AllocPolicy>::tryPop(value_type& out) noexcept {
 
 template <class T, class AllocPolicy>
 bool LockFreeStack<T, AllocPolicy>::isEmpty() const noexcept {
-    return head_.load(MemoryOrder::Acquire) == nullptr;
+    HeadPacker packer(const_cast<Atomic<uint64_t>&>(head_)); 
+    return packer.load(MemoryOrder::Acquire).ptr == nullptr;
 }
-
-// *** 关键修改：删除了 retireNode, collectRetired, 和 drainAll 的实现 ***
-// *** 这些方法现在由 HazardPointerOrganizer 负责 ***

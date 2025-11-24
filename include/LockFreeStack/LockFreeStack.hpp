@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include "atomics/x86_atomics.hpp" 
+#include "Tool/StampPtr.hpp"
 #include "LockFreeStack/StackNode.hpp"
 #include "Hazard/HazardPointerOrganizer.hpp"
 
@@ -31,7 +32,8 @@ public:
 
 
 private:
-    Atomic<node_type*> head_{nullptr};
+    Atomic<uint64_t> head_{0}; 
+    using HeadPacker = StampPtr<node_type, Atomic<uint64_t>>;
     hp_organizer_type& hp_organizer_;
 };
 
