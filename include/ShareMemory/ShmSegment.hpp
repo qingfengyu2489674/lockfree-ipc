@@ -1,80 +1,50 @@
 #pragma once
+
 #include "ShareMemory/ShmResourceManager.hpp"
 #include "ShareMemory/ShmHeader.hpp"
 #include <string>
-#include <thread>
-#include <chrono>
-#include <stdexcept>
-#include <iostream>
-#include <cstring>
+#include <cstdint> // for uint8_t
 
 class ShmSegment {
 public:
-    ShmSegment(const std::string& name, size_t size) 
-        : resource_(name, size) { 
-        
-        base_ptr_ = static_cast<uint8_t*>(resource_.getBaseAddress());
-        header_ptr_ = reinterpret_cast<ShmHeader*>(base_ptr_);
+    // 构造函数声明
+    ShmSegment(const std::string& name, size_t size);
 
-        if (resource_.isCreator()) {
-            format();
-        } else {
-            waitReady();
-        }
-    }
+    // 析构函数（如果是默认析构，可以不写或写 =default，但如果 resource_ 需要特殊处理则需实现）
+    ~ShmSegment() = default;
 
+    // 禁用拷贝
     ShmSegment(const ShmSegment&) = delete;
     ShmSegment& operator=(const ShmSegment&) = delete;
     
+    // 允许移动 (在头文件 default 即可，除非需要隐藏 ShmResourceManager 的实现细节)
     ShmSegment(ShmSegment&&) = default;
     ShmSegment& operator=(ShmSegment&&) = default;
 
-    // 获取堆区偏移 (Header 之后)
+    // 获取堆区偏移 (Header 之后) - 保持 inline 以获得最高性能
     void* getHeapSection() const noexcept {
         return base_ptr_ + sizeof(ShmHeader);
     }
     
-    // 获取原始指针 (通常 Allocator 需要这个计算偏移)
+    // 获取原始指针 - 保持 inline
     void* getBaseAddress() const noexcept {
         return base_ptr_;
     }
 
-    size_t getSize() const noexcept { return resource_.getSize(); }
-
-    static void unlink(const std::string& name) {
-        ShmResourceManager::unlink(name);
+    // 获取大小 - 保持 inline
+    size_t getSize() const noexcept { 
+        return resource_.getSize(); 
     }
+
+    // 静态解绑函数声明
+    static void unlink(const std::string& name);
 
 private:
     ShmResourceManager resource_;
     uint8_t* base_ptr_{nullptr};
     ShmHeader* header_ptr_{nullptr};
 
-    void format() {
-        // 先设为 Initializing
-        header_ptr_->state.store(ShmState::kInitializing, std::memory_order_relaxed);
-        header_ptr_->app_state.store(ShmState::kUninit, std::memory_order_relaxed);
-        
-        header_ptr_->magic = ShmHeader::kMagic;
-        header_ptr_->version = 1;
-        header_ptr_->total_size = resource_.getSize();
-        header_ptr_->heap_offset = sizeof(ShmHeader);
-
-        // 安全清零
-        std::memset(base_ptr_ + sizeof(ShmHeader), 0, resource_.getSize() - sizeof(ShmHeader));
-
-        // 发布 Ready
-        header_ptr_->state.store(ShmState::kReady, std::memory_order_release);
-    }
-
-    void waitReady() {
-        int retries = 0;
-        while (header_ptr_->state.load(std::memory_order_acquire) != ShmState::kReady) {
-            if (retries++ > 5000) throw std::runtime_error("Timeout waiting for ShmSegment");
-            std::this_thread::yield();
-        }
-        if (header_ptr_->magic != ShmHeader::kMagic) {
-            throw std::runtime_error("ShmSegment Magic Mismatch");
-        }
-    }
+    // 私有辅助函数声明
+    void format();
+    void waitReady();
 };

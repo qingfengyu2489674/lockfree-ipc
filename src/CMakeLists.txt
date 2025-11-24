@@ -3,6 +3,7 @@
 # 将 calculator.cpp 编译成一个名为 "mylib" 的静态库
 add_library(mylib STATIC
     ShareMemory/ShmResourceManager.cpp
+    ShareMemory/ShmSegment.cpp
 
     gc_malloc/CentralHeap/AlignedChunkAllocatorByMmap.cpp
     gc_malloc/CentralHeap/ShmChunkAllocator.cpp
