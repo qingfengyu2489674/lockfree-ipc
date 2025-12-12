@@ -9,6 +9,7 @@
 #include "Hazard/HpRetiredManager.hpp"
 #include "gc_malloc/ThreadHeap/ThreadHeap.hpp"
 #include "Hazard/HpSlotManagerDetail.hpp"
+#include "Hazard/GCHook.hpp"
 
 
 template <class Node, std::size_t MaxPointers, class AllocPolicy = DefaultHeapPolicy>
@@ -69,4 +70,5 @@ private:
     SlotManager    slot_manager_{};
     RetiredManager retired_manager_{};
 };
+
 

@@ -106,20 +106,30 @@ std::size_t HpSlotManager<Node, MaxPointers, AllocPolicy>::flushAllRetiredTo(std
 
     size_t total_flushed = 0;
     for (SlotType* slot : slots) {
-        // 使用新增的公共接口
-        Node* retired_list = slot->getRetiredListHead().exchange(nullptr, std::memory_order_acq_rel);
-        if (!retired_list) continue;
+        // [修改 1] getRetiredListHead() 现在返回 Atomic<GCHook*>，所以取出的是 GCHook*
+        GCHook* hook_ptr = slot->getRetiredListHead().exchange(nullptr, std::memory_order_acq_rel);
+        
+        if (!hook_ptr) continue;
+        
+        // [修改 2] 将 GCHook* 安全转回 Node* (前提是 Node 继承自 GCHook)
+        Node* retired_list = static_cast<Node*>(hook_ptr);
         
         Node* tail = retired_list;
         size_t count = 1;
-        while (tail->next) {
-            tail = tail->next;
+
+        // [修改 3] 遍历链表寻找尾部时，必须走 gc_next，绝对不能碰 next (那是栈逻辑用的)
+        while (tail->gc_next) {
+            // gc_next 是 GCHook* 类型，转回 Node* 继续遍历
+            tail = static_cast<Node*>(tail->gc_next);
             count++;
         }
 
         Node* old_head = dst_head.load(std::memory_order_relaxed);
         do {
-            tail->next = old_head;
+            // [修改 4] 链接旧链表头时，修改的是 gc_next
+            // old_head 是 Node*，赋值给 gc_next (GCHook*) 是安全的隐式转换
+            tail->gc_next = old_head;
+            
         } while (!dst_head.compare_exchange_weak(old_head, retired_list, std::memory_order_release, std::memory_order_relaxed));
         
         total_flushed += count;

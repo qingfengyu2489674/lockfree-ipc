@@ -22,7 +22,7 @@ void LockFreeStack<T, AllocPolicy>::push(const value_type& v) {
     auto current = packer.load(MemoryOrder::Relaxed);
     do {
         new_node->next = current.ptr;
-    } while (!packer.casBump(current, new_node, MemoryOrder::Release, MemoryOrder::Relaxed));
+    } while (!packer.casBump(current, new_node, MemoryOrder::AcqRel, MemoryOrder::Relaxed));
 }
 
 template <class T, class AllocPolicy>
@@ -34,7 +34,7 @@ void LockFreeStack<T, AllocPolicy>::push(value_type&& v) {
     
     do {
         new_node->next = current.ptr;
-    } while (!packer.casBump(current, new_node, MemoryOrder::Release, MemoryOrder::Relaxed));
+    } while (!packer.casBump(current, new_node, MemoryOrder::AcqRel, MemoryOrder::Relaxed));
 }
 
 template <class T, class AllocPolicy>

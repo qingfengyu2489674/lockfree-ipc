@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <cassert> 
 
+#include "Hazard/GCHook.hpp"
+
 template<class Node, std::size_t MaxPointers>
 class HpSlot {
 public:
@@ -24,12 +26,12 @@ public:
 
     std::size_t getHazardPointerCount() const noexcept;
     
-    std::atomic<Node*>& getRetiredListHead() noexcept;
+    std::atomic<GCHook*>& getRetiredListHead() noexcept;
     const std::atomic<Node*>& getHazardPointerAt(std::size_t index) const noexcept;
     
 private: 
     std::array<std::atomic<Node*>, MaxPointers> hazard_ptrs_{};
-    std::atomic<Node*> retired_head{nullptr}; // 本线程退休链表头（直接 Node*）
+    std::atomic<GCHook*> retired_head{nullptr}; // 本线程退休链表头（直接 Node*）
 };
 
 
@@ -71,17 +73,34 @@ void HpSlot<Node, MaxPointers>::clearAll() noexcept {
 
 // --- 退休链表管理实现 (逻辑不变，仅更新模板签名) ---
 
+// template<class Node, std::size_t MaxPointers>
+// void HpSlot<Node, MaxPointers>::pushRetired(Node* n) noexcept {
+//     // 这部分逻辑与 retired_head 相关，与危险指针数量无关，因此保持不变。
+//     // 要求：Node 拥有 `Node* next`。
+//     Node* old_head = retired_head.load(std::memory_order_relaxed);
+//     do {
+//         n->next = old_head;
+//     } while (!retired_head.compare_exchange_weak(
+//         old_head, n,
+//         std::memory_order_release,
+//         std::memory_order_relaxed)); // 失败时 relaxed 即可，因为 CAS 会加载新值
+// }
+
+
 template<class Node, std::size_t MaxPointers>
 void HpSlot<Node, MaxPointers>::pushRetired(Node* n) noexcept {
-    // 这部分逻辑与 retired_head 相关，与危险指针数量无关，因此保持不变。
-    // 要求：Node 拥有 `Node* next`。
-    Node* old_head = retired_head.load(std::memory_order_relaxed);
+    // 1. 强制转换为基类指针
+    // 要求：Node 必须继承自 GCHook
+    GCHook* hook = static_cast<GCHook*>(n);
+
+    GCHook* old_head = retired_head.load(std::memory_order_relaxed);
     do {
-        n->next = old_head;
+        // 2. 修改的是基类的 gc_next，完全不碰子类的 Stack 逻辑
+        hook->gc_next = old_head;
     } while (!retired_head.compare_exchange_weak(
-        old_head, n,
+        old_head, hook, // 注意 retired_head 类型也应该是 atomic<GCHook*>
         std::memory_order_release,
-        std::memory_order_relaxed)); // 失败时 relaxed 即可，因为 CAS 会加载新值
+        std::memory_order_relaxed));
 }
 
 template<class Node, std::size_t MaxPointers>
@@ -91,6 +110,6 @@ Node* HpSlot<Node, MaxPointers>::drainAllRetired() noexcept {
 
 
 template<class Node, std::size_t MaxPointers>
-inline std::atomic<Node*>& HpSlot<Node, MaxPointers>::getRetiredListHead() noexcept {
+inline std::atomic<GCHook*>& HpSlot<Node, MaxPointers>::getRetiredListHead() noexcept {
     return retired_head;
 }

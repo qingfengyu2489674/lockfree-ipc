@@ -1,11 +1,12 @@
 // StackNode.hpp
 #pragma once
 #include <atomic>
+#include "Hazard/GCHook.hpp"
 
 
 // Treiber 链式栈的最小节点
 template <class T>
-class StackNode {
+class StackNode : public GCHook {
 public:
     StackNode* next{nullptr};          // 这里实现为普通指针即可，没必要为原子
     T value;                           // 存储的值
